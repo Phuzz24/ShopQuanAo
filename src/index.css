@@ -1,3 +1,33 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import "~slick-carousel/slick/slick.css";
+@import "~slick-carousel/slick/slick-theme.css";
+
+body {
+    background-color: #e6e6ff;
+    width: 100vw;
+    overflow-x: hidden;
+    font-family: "Montserrat", sans-serif;
+}
+/* Ẩn submenu khi chưa hover vào */
+.group-hover\:block {
+    display: none;
+  }
+  
+  /* Hiển thị submenu con khi hover vào mục cha */
+  .group:hover .group-hover\:block {
+    display: block;
+  }
+  
+  /* Đảm bảo rằng submenu con của "Áo" hiển thị bên phải */
+  .group-hover\:block .relative {
+    position: relative;
+  }
+  
+  /* Menu con của Áo sẽ chỉ hiển thị khi hover vào Áo */
+  .group-hover\:block .group:hover .group-hover\:block {
+    display: block;
+  }
+  
+  
