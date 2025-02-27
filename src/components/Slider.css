@@ -1,0 +1,23 @@
+.slick-prev, .slick-next {
+    background-color: rgba(0, 0, 0, 0.5);  /* Thêm nền mờ cho nút */
+    color: white;  /* Màu chữ */
+    border-radius: 50%;  /* Nút tròn */
+    padding: 20px;
+    z-index: 10;  /* Đảm bảo nút không bị che khuất */
+    position: absolute;
+    top: 50%;  /* Đặt nút ở giữa chiều dọc */
+    transform: translateY(-50%); /* Căn giữa theo chiều dọc */
+  }
+  
+  .slick-prev {
+    left: 10px;  /* Vị trí nút Prev bên trái */
+  }
+  
+  .slick-next {
+    right: 10px;  /* Vị trí nút Next bên phải */
+  }
+  
+  .slick-prev:hover, .slick-next:hover {
+    background-color: rgba(0, 0, 0, 0.7); /* Tăng độ tối khi hover */
+  }
+  
