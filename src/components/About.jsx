@@ -11,43 +11,43 @@ const StoreIntro = () => {
     <div className="py-20 bg-white">
       {/* Giới thiệu về cửa hàng */}
       <section className="text-center mb-16" data-aos="fade-up">
-        <h2 className="text-4xl font-bold text-red-600 mb-4">Giới Thiệu Về Cửa Hàng</h2>
+        <h2 className="text-4xl font-bold text-blue-600 mb-4">Giới Thiệu Về Cửa Hàng</h2>
         <p className="text-lg text-gray-600 mx-auto max-w-4xl">
-          Chúng tôi là cửa hàng thời trang tiên tiến, nơi cung cấp các sản phẩm thời trang nam và nữ với phong cách hiện đại và chất lượng vượt trội. Với một đội ngũ thiết kế tài năng, chúng tôi cam kết mang đến những bộ sưu tập mới nhất, phong cách độc đáo để phục vụ nhu cầu thời trang của mọi khách hàng.
+          Chúng tôi là cửa hàng điện thoại tiên tiến, nơi cung cấp các dòng điện thoại cao cấp với công nghệ mới nhất và hiệu suất vượt trội. Với một đội ngũ tư vấn viên tận tâm, chúng tôi cam kết mang đến những sản phẩm tốt nhất và dịch vụ hỗ trợ tuyệt vời cho khách hàng.
         </p>
       </section>
 
       {/* Lý do nên chọn cửa hàng */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12 mb-16 text-center">
-        <div className="bg-gray-200 p-8 rounded-lg shadow-md hover:shadow-xl transition-all " data-aos="zoom-in">
-          <h3 className="text-xl font-semibold text-gray-800 mb-4 ">Sản Phẩm Chất Lượng</h3>
-          <p className="text-gray-600  ">
-            Tất cả sản phẩm của chúng tôi được chọn lọc kỹ lưỡng từ các nhà sản xuất uy tín, đảm bảo chất lượng vượt trội và độ bền cao.
+        <div className="bg-gray-200 p-8 rounded-lg shadow-md hover:shadow-xl transition-all" data-aos="zoom-in">
+          <h3 className="text-xl font-semibold text-gray-800 mb-4">Sản Phẩm Chính Hãng</h3>
+          <p className="text-gray-600">
+            Chúng tôi chỉ cung cấp các sản phẩm điện thoại chính hãng từ các thương hiệu uy tín, bảo đảm chất lượng và chế độ bảo hành tốt nhất.
           </p>
         </div>
         <div className="bg-gray-200 p-8 rounded-lg shadow-md hover:shadow-xl transition-all" data-aos="zoom-in">
-          <h3 className="text-xl font-semibold text-gray-800 mb-4">Dịch Vụ Tận Tâm</h3>
+          <h3 className="text-xl font-semibold text-gray-800 mb-4">Dịch Vụ Hỗ Trợ 24/7</h3>
           <p className="text-gray-600">
-            Chúng tôi luôn sẵn sàng hỗ trợ bạn với dịch vụ chăm sóc khách hàng chu đáo, giúp bạn tìm kiếm sản phẩm phù hợp nhất.
+            Đội ngũ hỗ trợ khách hàng của chúng tôi luôn sẵn sàng phục vụ bạn 24/7, giúp bạn giải đáp mọi thắc mắc và lựa chọn sản phẩm phù hợp.
           </p>
         </div>
         <div className="bg-gray-200 p-8 rounded-lg shadow-md hover:shadow-xl transition-all" data-aos="zoom-in">
-          <h3 className="text-xl font-semibold text-gray-800 mb-4">Mua Sắm Trực Tuyến Dễ Dàng</h3>
+          <h3 className="text-xl font-semibold text-gray-800 mb-4">Mua Sắm Trực Tuyến Thuận Tiện</h3>
           <p className="text-gray-600">
-            Với giao diện dễ sử dụng và phương thức thanh toán bảo mật, việc mua sắm tại cửa hàng chúng tôi chưa bao giờ dễ dàng và tiện lợi đến vậy.
+            Với giao diện website thân thiện và các phương thức thanh toán bảo mật, việc mua sắm điện thoại tại cửa hàng chúng tôi trở nên dễ dàng và tiện lợi hơn bao giờ hết.
           </p>
         </div>
       </section>
 
       {/* Mô tả không gian cửa hàng */}
       <section className="text-center">
-        <h2 className="text-4xl font-bold text-red-600 mb-4" data-aos="fade-up">Không Gian Cửa Hàng</h2>
+        <h2 className="text-4xl font-bold text-blue-600 mb-4" data-aos="fade-up">Không Gian Cửa Hàng</h2>
         <p className="text-lg text-gray-600 mx-auto max-w-4xl mb-8" data-aos="fade-up">
-          Chúng tôi không chỉ cung cấp các sản phẩm thời trang mà còn mang đến một không gian mua sắm thoải mái, sang trọng, với các khu trưng bày sản phẩm hiện đại. Đến với cửa hàng, bạn sẽ có trải nghiệm mua sắm tuyệt vời.
+          Cửa hàng của chúng tôi không chỉ là nơi bán điện thoại, mà còn là nơi bạn có thể trải nghiệm trực tiếp các sản phẩm, nhận tư vấn chuyên sâu và khám phá những tính năng mới nhất của các dòng điện thoại.
         </p>
         <img
           src="https://dony.vn/wp-content/uploads/2021/08/shop-quan-ao-don-gian.jpg"
-          alt="Không gian cửa hàng"
+          alt="Không gian cửa hàng điện thoại"
           className="w-full max-w-5xl mx-auto h-auto object-cover rounded-lg shadow-lg transition-all hover:scale-105 hover:brightness-90"
           data-aos="fade-up"
         />
