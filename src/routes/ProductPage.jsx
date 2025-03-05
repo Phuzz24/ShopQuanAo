@@ -1,22 +1,24 @@
 import React, { useState } from 'react';
-import { FaShoppingCart, FaStar, FaSearch, FaFilter } from 'react-icons/fa';
+import { FaShoppingCart, FaStar, FaSearch } from 'react-icons/fa';
 import { motion } from 'framer-motion';
+import { useCart } from '../context/CartContext'; // Import useCart từ CartContext
 
 const sampleProducts = [
-  { id: 1, name: "Áo Thun Cổ Tròn", category: "Áo", price: 250000, image: "https://example.com/product1.jpg", rating: 4.5 },
-  { id: 2, name: "Quần Jeans Slimfit", category: "Quần", price: 450000, image: "https://example.com/product2.jpg", rating: 4.8 },
-  { id: 3, name: "Áo Khoác Dạ", category: "Áo", price: 700000, image: "https://example.com/product3.jpg", rating: 5 },
-  { id: 4, name: "Giày Sneaker Trắng", category: "Giày", price: 500000, image: "https://example.com/product4.jpg", rating: 4.7 },
+  { id: 1, name: "iPhone 15", category: "iPhone", price: 15990000, image: "https://i.gadgets360cdn.com/large/iphone_15_series_models_1694757260405.jpg", rating: 4.5 },
+  { id: 2, name: "Samsung Galaxy S22", category: "Samsung", price: 12990000, image: "https://via.placeholder.com/150?text=Samsung+Galaxy+S22", rating: 4.8 },
+  { id: 3, name: "Google Pixel 6", category: "Google", price: 10990000, image: "https://via.placeholder.com/150?text=Google+Pixel+6", rating: 4.7 },
+  { id: 4, name: "OnePlus 9", category: "OnePlus", price: 8990000, image: "https://via.placeholder.com/150?text=OnePlus+9", rating: 4.6 },
 ];
 
 const ProductPage = () => {
   const [cart, setCart] = useState([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Tất cả");
-  const [priceRange, setPriceRange] = useState([0, 1000000]);
+  const [priceRange, setPriceRange] = useState([0, 20000000]);
+  const { addToCart } = useCart(); // Lấy hàm addToCart từ CartContext
 
-  const addToCart = (product) => {
-    setCart([...cart, product]);
+  const handleAddToCart = (product) => {
+    addToCart(product); // Thêm sản phẩm vào giỏ hàng
   };
 
   const filteredProducts = sampleProducts.filter((product) => {
@@ -30,7 +32,7 @@ const ProductPage = () => {
 
   return (
     <div className="container mx-auto py-10 px-4">
-      <h1 className="text-4xl font-bold text-center text-red-600 mb-10">Danh Mục Sản Phẩm</h1>
+      <h1 className="text-4xl font-bold text-center text-red-600 mb-10">Danh Mục Điện Thoại</h1>
 
       {/* Bộ lọc và tìm kiếm */}
       <div className="flex flex-col md:flex-row justify-between mb-6 gap-4">
@@ -50,15 +52,16 @@ const ProductPage = () => {
           onChange={(e) => setCategory(e.target.value)}
         >
           <option value="Tất cả">Tất cả</option>
-          <option value="Áo">Áo</option>
-          <option value="Quần">Quần</option>
-          <option value="Giày">Giày</option>
+          <option value="iPhone">iPhone</option>
+          <option value="Samsung">Samsung</option>
+          <option value="Google">Google</option>
+          <option value="OnePlus">OnePlus</option>
         </select>
         <input
           type="range"
           min="0"
-          max="1000000"
-          step="50000"
+          max="10000000"
+          step="500000"
           value={priceRange[1]}
           onChange={(e) => setPriceRange([0, Number(e.target.value)])}
           className="w-full md:w-1/4"
@@ -86,7 +89,7 @@ const ProductPage = () => {
             </div>
             <button
               className="w-full mt-3 bg-blue-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-500 transition"
-              onClick={() => addToCart(product)}
+              onClick={() => handleAddToCart(product)} // Gọi addToCart khi nhấn vào nút
             >
               <FaShoppingCart /> Thêm vào giỏ hàng
             </button>

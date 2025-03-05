@@ -6,9 +6,10 @@ import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
 
 const images = [
-  "https://salt.tikicdn.com/ts/brickv2og/00/50/1b/3cde53d8619069b98772edffe8c5dad1.jpg",
-  "https://w.ladicdn.com/s1300x750/6715dfc816710b00127e842d/_banner-ngang-20241107075200-ptk4t.jpg",
-  "https://bizweb.dktcdn.net/100/426/984/files/phoi-ao-thun-nam-voi-quan-au.jpg?v=1642240103382"
+  "https://www.webtekno.com/images/editor/default/0004/38/d34c1e9d9f1e99bc0263db1331c3fda509dca52f.jpeg",
+  "https://top3.vn/uploads/source/SaSan/elm-co-khi/cover-baner-web.jpg",
+  "https://i.ytimg.com/vi/36HnmEcKDJk/maxresdefault.jpg",
+  "https://www.mobilegyans.com/wp-content/uploads/2023/02/Apple-iPhone-16.jpg"
 ];
 
 const CustomPrevArrow = ({ onClick }) => (
@@ -39,8 +40,8 @@ const SliderComponent = () => {
     autoplay: true,
     autoplaySpeed: 4000,
     arrows: true,
-    prevArrow: <CustomPrevArrow />, // Custom button
-    nextArrow: <CustomNextArrow />, // Custom button
+    prevArrow: <CustomPrevArrow />,
+    nextArrow: <CustomNextArrow />,
   };
 
   return (

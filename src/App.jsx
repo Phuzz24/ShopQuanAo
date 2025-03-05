@@ -1,6 +1,12 @@
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import { Helmet } from "react-helmet";
+import { ThemeProvider } from './context/ThemeContext'; 
+import { CartProvider } from './context/CartContext';
+import { CartSlidebar } from './components/CartSlidebar'
+
+// Import TawkToWidget component
+import TawkToWidget from './components/TawkToWidget';
 
 //Layout
 import UserLayout from './layout/UserLayout';
@@ -16,6 +22,7 @@ import LoginPage from './routes/LoginPage'
 import RegisterPage from './routes/RegisterPage'
 import NewPage from './routes/NewPage'
 import NewsDetailPage from './components/NewsDetailPage'
+import CartDetailPage from './components/CartDetailPage';
 
 //Admin Page
 import AdminUsers from './routes/admin/AdminUsers';
@@ -27,11 +34,13 @@ import Settings from './routes/admin/Settings';
 import Dashboard from './components/admin/Dashboard'
 const App = () => {
   return (
+    <ThemeProvider> 
+      <CartProvider>
     <Router>
       <Helmet>
         <title>NeoPlaton</title>
       </Helmet>
-
+      <TawkToWidget />
 
       <Routes>
         <Route path="/" element={<Navigate to="/home"/>}/>
@@ -46,6 +55,7 @@ const App = () => {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/news" element={<NewPage />} />
           <Route path="/news/:id" element={<NewsDetailPage/>} />
+          <Route path="/cart" element={<CartDetailPage/>}/>
         </Route>
 
          {/* Layout dành cho Admin */}
@@ -55,10 +65,15 @@ const App = () => {
           <Route path="products" element={<Products />} />
           <Route path="orders" element={<Orders />} />
           <Route path="customers" element={<Customers />} />
+          <Route path="settings" element={<Settings />} />
+
         </Route>
       </Routes>
           
     </Router>
+    </CartProvider>
+    </ThemeProvider>
+
   );
 };
 
