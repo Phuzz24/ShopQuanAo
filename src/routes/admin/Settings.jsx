@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Helmet } from "react-helmet";
 import { useTheme } from "../../context/ThemeContext"; // Import ThemeContext
 import { Switch } from "@headlessui/react";
 
@@ -40,6 +41,11 @@ const Settings = () => {
         darkMode ? "bg-gray-800 text-white" : "bg-white text-gray-900"
       }`}
     >
+      <Helmet>
+      <title>
+        Setting
+      </title>
+    </Helmet>
       <h1 className="text-2xl font-bold mb-4">Cài đặt Admin</h1>
 
       {/* Chuyển đổi chế độ sáng/tối */}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { FaUser, FaLock } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
@@ -12,11 +13,17 @@ const LoginPage = () => {
 
   return (
     <div className="flex h-screen bg-gradient-to-r from-blue-400 via-teal-400 to-green-400">
+    <Helmet>
+      <title>
+        Đăng nhập
+      </title>
+    </Helmet>
       {/* Logo và thương hiệu */}
       <div className="w-1/2 flex justify-center items-center bg-white p-10">
         <div className="text-center">
-                 <Link to="/home" className="text-3xl font-bold text-red-600">
-                   NEO<span className="text-black"> PLATTON</span></Link>
+          <Link to="/home" className="text-3xl font-bold text-red-600">
+            NEO<span className="text-black"> PLATTON</span>
+          </Link>
           <p className="text-xl text-gray-600 mt-2">Thương hiệu thời trang đỉnh cao</p>
         </div>
       </div>
@@ -84,6 +91,13 @@ const LoginPage = () => {
               </button>
             </div>
           </form>
+
+          {/* Thêm phần quên mật khẩu */}
+          <div className="text-center mt-4">
+            <Link to="/forgot-password" className="text-sm text-blue-500 hover:underline">
+              Quên mật khẩu?
+            </Link>
+          </div>
 
           {/* Các logo đăng nhập bên thứ 3 */}
           <div className="flex justify-center items-center gap-4 mt-6 space-x-4">
