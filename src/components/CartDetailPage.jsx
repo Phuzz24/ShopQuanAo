@@ -1,4 +1,5 @@
 import React from 'react';
+import { Helmet } from 'react-helmet';
 import { useCart } from '../context/CartContext';
 import { Link } from 'react-router-dom'; // Để chuyển hướng trang
 
@@ -12,6 +13,11 @@ const CartDetailPage = () => {
 
   return (
     <div className="max-w-screen-lg mx-auto py-12 px-6">
+      <Helmet>
+      <title>
+        Giỏ hàng
+      </title>
+    </Helmet>
       <h2 className="text-3xl font-bold mb-6 text-center">Giỏ Hàng Của Bạn</h2>
       
       {cart.length === 0 ? (

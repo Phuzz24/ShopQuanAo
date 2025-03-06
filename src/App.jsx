@@ -32,6 +32,11 @@ import Orders from './routes/admin/Orders';
 import Products from './routes/admin/Products';
 import Settings from './routes/admin/Settings';
 import Dashboard from './components/admin/Dashboard'
+
+//import logo
+import logo from './images/logo.png'
+import BackToTopButton from './components/BackToTopButton'; // Import nút Trở về đầu trang
+
 const App = () => {
   return (
     <ThemeProvider> 
@@ -39,7 +44,8 @@ const App = () => {
     <Router>
       <Helmet>
         <title>NeoPlaton</title>
-      </Helmet>
+        <link rel="icon" href={logo} className='' /> {/* Đặt logo làm favicon */}
+        </Helmet>
       <TawkToWidget />
 
       <Routes>
@@ -66,10 +72,12 @@ const App = () => {
           <Route path="orders" element={<Orders />} />
           <Route path="customers" element={<Customers />} />
           <Route path="settings" element={<Settings />} />
-
+          <Route path="categories" element={<Categories />} />
+          <Route path="users" element={<AdminUsers />} />
         </Route>
       </Routes>
-          
+      <BackToTopButton />
+
     </Router>
     </CartProvider>
     </ThemeProvider>

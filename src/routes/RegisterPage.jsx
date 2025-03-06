@@ -1,11 +1,18 @@
 import React from 'react';
+import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { FaUser, FaEnvelope, FaLock } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 
 const RegisterPage = () => {
   return (
+    
     <div className="flex h-screen bg-gradient-to-r from-pink-400 via-yellow-400 to-orange-400">
+    <Helmet>
+      <title>
+        Đăng kí
+      </title>
+    </Helmet>
       {/* Logo và thương hiệu */}
       <div className="w-1/2 flex justify-center items-center bg-white p-10">
         <div className="text-center">

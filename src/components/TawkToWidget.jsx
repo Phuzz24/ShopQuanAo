@@ -5,7 +5,7 @@ const TawkToWidget = () => {
     // Tạo và thêm script Tawk.to vào body của trang
     const script = document.createElement("script");
     script.type = "text/javascript";
-    script.src = "https://embed.tawk.to/67c5c59728c1cc19085dc8e6/1ile8nmfm"; // Mã nhúng của bạn
+    script.src = "https://embed.tawk.to/67c5c59728c1cc19085dc8e6/1ile8nmfm"; // Thay bằng mã nhúng của bạn
     script.async = true;
     script.charset = "UTF-8";
     script.setAttribute("crossorigin", "*");

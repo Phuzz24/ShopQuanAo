@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Helmet } from "react-helmet";
 import { FaShoppingCart, FaStar, FaSearch } from 'react-icons/fa';
 import { motion } from 'framer-motion';
 import { useCart } from '../context/CartContext'; // Import useCart từ CartContext
@@ -32,6 +33,11 @@ const ProductPage = () => {
 
   return (
     <div className="container mx-auto py-10 px-4">
+      <Helmet>
+        <title>
+          Sản phẩm
+          </title>  
+              </Helmet>
       <h1 className="text-4xl font-bold text-center text-red-600 mb-10">Danh Mục Điện Thoại</h1>
 
       {/* Bộ lọc và tìm kiếm */}
@@ -41,13 +47,13 @@ const ProductPage = () => {
           <input
             type="text"
             placeholder="Tìm kiếm sản phẩm..."
-            className="w-full pl-10 pr-4 py-2 border rounded-lg"
+            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <select
-          className="w-full md:w-1/4 p-2 border rounded-lg"
+          className="w-full md:w-1/4 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
         >
@@ -73,13 +79,30 @@ const ProductPage = () => {
         {filteredProducts.map((product) => (
           <motion.div
             key={product.id}
-            className="bg-white p-4 rounded-lg shadow-lg hover:shadow-2xl transition-transform transform hover:scale-105"
+            className="bg-white p-4 rounded-lg shadow-lg hover:shadow-2xl transition-all"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            whileHover={{
+              scale: 1.05,
+              y: -5,
+              boxShadow: "0 10px 20px rgba(0, 0, 0, 0.1)",
+              transition: { duration: 0.3, ease: "easeOut" },
+            }}
           >
-            <img src={product.image} alt={product.name} className="w-full h-60 object-cover rounded-lg mb-4" />
-            <h2 className="text-xl font-bold text-gray-800">{product.name}</h2>
+            {/* Hiệu ứng hover chỉ áp dụng cho hình ảnh */}
+            <motion.img
+              src={product.image}
+              alt={product.name}
+              className="w-full h-60 object-cover rounded-lg mb-4 transition-all duration-300 transform hover:scale-110"
+            />
+            {/* Tên sản phẩm sẽ không có hiệu ứng phóng to khi hover vào */}
+            <motion.h2
+              className="text-xl font-bold text-gray-800 hover:text-blue-600 transition-colors duration-200"
+              whileHover={{ scale: 1.05 }} // Tăng nhẹ khi hover vào tên sản phẩm
+            >
+              {product.name}
+            </motion.h2>
             <p className="text-lg text-red-500 font-semibold">{product.price.toLocaleString()} VND</p>
             <div className="flex items-center gap-1 my-2">
               {[...Array(5)].map((_, i) => (
@@ -87,12 +110,13 @@ const ProductPage = () => {
               ))}
               <span className="text-gray-600 ml-2">({product.rating})</span>
             </div>
-            <button
-              className="w-full mt-3 bg-blue-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-500 transition"
+            <motion.button
+              className="w-full mt-3 bg-blue-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-500 transition-all duration-300"
               onClick={() => handleAddToCart(product)} // Gọi addToCart khi nhấn vào nút
+              whileTap={{ scale: 0.95 }} // Hiệu ứng khi nhấn nút
             >
               <FaShoppingCart /> Thêm vào giỏ hàng
-            </button>
+            </motion.button>
           </motion.div>
         ))}
       </div>
