@@ -1,4 +1,6 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
+
 import { Helmet } from 'react-helmet';
 import NewsCard from '../components/NewsCard';
 
@@ -63,10 +65,8 @@ const NewPage = () => {
   return (
     <div className="py-12 bg-gray-100">
       <Helmet>
-      <title>
-        Tin tức
-      </title>
-    </Helmet>
+        <title>Tin tức</title>
+      </Helmet>
       <div className="container mx-auto px-4">
         <h1 className="text-4xl font-bold text-center text-gray-800 mb-8">
           Tin Tức Mới Nhất
@@ -74,15 +74,24 @@ const NewPage = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
           {news.map((article) => (
-            <NewsCard
+            <div
               key={article.id}
-              title={article.title}
-              description={article.description}
-              image={article.image}
-              id={article.id}
-              loading="lazy" // Thêm thuộc tính lazy loading vào đây
-
-            />
+              className="bg-white p-6 rounded-lg shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105"
+            >
+              <img
+                src={article.image}
+                alt={article.title}
+                className="w-full h-48 object-cover rounded-lg mb-4 transition-all duration-300 transform hover:scale-105"
+              />
+              <h3 className="text-xl font-semibold text-gray-800 mb-4">{article.title}</h3>
+              <p className="text-gray-600 mb-4">{article.description}</p>
+              <Link
+                to={`/news/${article.id}`} // Chuyển đến trang chi tiết khi nhấn vào
+                className="text-blue-600 hover:underline transition-all duration-300"
+              >
+                Xem Thêm
+              </Link>
+            </div>
           ))}
         </div>
       </div>

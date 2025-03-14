@@ -1,50 +1,122 @@
-// src/routes/SalePage.jsx
-import React from 'react';
-import { Helmet } from 'react-helmet';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import ProductCard from '../components/ProductCard';  // Component hiển thị sản phẩm
+import { FaClock } from 'react-icons/fa';  // Biểu tượng đồng hồ
 
 const SalePage = () => {
-  const salePhones = [
-    { id: 1, name: 'iPhone 13', image: 'src\images\iphone13.jpg', oldPrice: 999, salePrice: 799 },
-    { id: 2, name: 'Samsung Galaxy S21', image: '/images/galaxyS21.jpg', oldPrice: 899, salePrice: 749 },
-    { id: 3, name: 'Google Pixel 6', image: '/images/pixel6.jpg', oldPrice: 699, salePrice: 599 },
+  const [countdown, setCountdown] = useState('');
+  const [products, setProducts] = useState([]);
+
+  // Mock data cho sản phẩm giảm giá
+  const mockSaleProducts = [
+    {
+      id: 1,
+      name: "iPhone 14 Pro Max",
+      price: 29990000,
+      salePrice: 25990000,
+      category: "Apple",
+      image: "https://example.com/iphone14.jpg",
+    },
+    {
+      id: 2,
+      name: "Samsung Galaxy S23",
+      price: 19990000,
+      salePrice: 17990000,
+      category: "Samsung",
+      image: "https://example.com/samsung.jpg",
+    },
+    {
+      id: 3,
+      name: "Xiaomi 13 Pro",
+      price: 17990000,
+      salePrice: 15990000,
+      category: "Xiaomi",
+      image: "https://example.com/xiaomi.jpg",
+    },
+    {
+      id: 4,
+      name: "OPPO Find X5 Pro",
+      price: 18990000,
+      salePrice: 16990000,
+      category: "OPPO",
+      image: "https://example.com/oppo.jpg",
+    },
+    {
+      id: 1,
+      name: "iPhone 14 Pro Max",
+      price: 29990000,
+      salePrice: 25990000,
+      category: "Apple",
+      image: "https://example.com/iphone14.jpg",
+    },
+    {
+      id: 2,
+      name: "Samsung Galaxy S23",
+      price: 19990000,
+      salePrice: 17990000,
+      category: "Samsung",
+      image: "https://example.com/samsung.jpg",
+    },
+    {
+      id: 3,
+      name: "Xiaomi 13 Pro",
+      price: 17990000,
+      salePrice: 15990000,
+      category: "Xiaomi",
+      image: "https://example.com/xiaomi.jpg",
+    },
+    {
+      id: 4,
+      name: "OPPO Find X5 Pro",
+      price: 18990000,
+      salePrice: 16990000,
+      category: "OPPO",
+      image: "https://example.com/oppo.jpg",
+    }
   ];
 
+  useEffect(() => {
+    setProducts(mockSaleProducts);
+    startCountdown();
+  }, []);
+
+  // Hàm để tính toán và cập nhật đồng hồ đếm ngược
+  const startCountdown = () => {
+    const targetDate = new Date('2025-03-30T23:59:59'); // Đặt thời gian kết thúc khuyến mãi
+    const interval = setInterval(() => {
+      const now = new Date();
+      const timeDifference = targetDate - now;
+
+      if (timeDifference <= 0) {
+        clearInterval(interval);
+        setCountdown('Khuyến mãi đã kết thúc');
+      } else {
+        const days = Math.floor(timeDifference / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((timeDifference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((timeDifference % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((timeDifference % (1000 * 60)) / 1000);
+
+        setCountdown(`${days}d ${hours}h ${minutes}m ${seconds}s`);
+      }
+    }, 1000);
+  };
+
   return (
-    <div className="container mx-auto mt-16 px-6">
-      <Helmet>
-        <title>Sale</title>
-      </Helmet>
-      <h2 className="text-4xl font-bold text-center text-gray-800 mb-12">Top Sale Phones</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-        {salePhones.map((phone) => (
-          <motion.div
-            key={phone.id}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6 }}
-            className="bg-gradient-to-r from-purple-500 to-indigo-500 p-6 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-300 ease-in-out"
-          >
-            <div className="relative">
-              <img
-                src={phone.image}
-                alt={phone.name}
-                className="w-full h-60 object-cover rounded-xl shadow-md"
-              />
-              <div className="absolute top-4 left-4 text-white font-semibold text-lg px-3 py-1 rounded-lg bg-opacity-50 bg-black">
-                Sale
-              </div>
-            </div>
-            <div className="mt-6 text-center">
-              <h3 className="text-2xl font-semibold text-white">{phone.name}</h3>
-              <p className="text-lg text-gray-100 mt-2">
-                <span className="line-through text-red-400">${phone.oldPrice}</span> ${phone.salePrice}
-              </p>
-              <button className="mt-4 w-full py-2 bg-yellow-500 text-white font-bold rounded-lg hover:bg-yellow-600 transition-colors duration-300">
-                Add to Cart
-              </button>
-            </div>
-          </motion.div>
+    <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white min-h-screen py-12 px-6">
+      <div className="text-center mb-6">
+        <h2 className="text-4xl font-bold text-yellow-300">Khuyến mãi đặc biệt!</h2>
+        <p className="text-xl text-yellow-200 mt-2">Hãy nhanh tay trước khi hết thời gian!</p>
+        
+        {/* Đồng hồ đếm ngược */}
+        <div className="bg-gradient-to-r from-yellow-300 to-yellow-500 text-gray-800 py-3 px-8 rounded-xl inline-flex items-center mt-6">
+          <FaClock className="mr-3 text-3xl" />
+          <span className="font-semibold text-2xl">{countdown}</span>
+        </div>
+      </div>
+
+      {/* Hiển thị sản phẩm đang giảm giá */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mt-8">
+        {products.map((product) => (
+          <ProductCard key={product.id} product={product} showDiscount={true} />
         ))}
       </div>
     </div>

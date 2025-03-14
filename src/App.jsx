@@ -1,9 +1,11 @@
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import { Helmet } from "react-helmet";
-import { ThemeProvider } from './context/ThemeContext'; 
 import { CartProvider } from './context/CartContext';
-import { CartSlidebar } from './components/CartSlidebar'
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { UserProvider } from './context/UserContext'; // Import UserProvider
+import AdBanner from './components/AdBanner';
 
 // Import TawkToWidget component
 import TawkToWidget from './components/TawkToWidget';
@@ -23,6 +25,11 @@ import RegisterPage from './routes/RegisterPage'
 import NewPage from './routes/NewPage'
 import NewsDetailPage from './components/NewsDetailPage'
 import CartDetailPage from './components/CartDetailPage';
+import ForgotPasswordPage from './routes/ForgotPasswordPage';
+import ProductDetailPage from './routes/ProductDetailPage';
+import UserProfilePage from './routes/UserProfilePage';
+import OrderHistoryPage from './routes/OrderHistoryPage';
+import Footer from './components/Footer';
 
 //Admin Page
 import AdminUsers from './routes/admin/AdminUsers';
@@ -32,6 +39,8 @@ import Orders from './routes/admin/Orders';
 import Products from './routes/admin/Products';
 import Settings from './routes/admin/Settings';
 import Dashboard from './components/admin/Dashboard'
+import NotFound from './routes/admin/NotFound';
+import Statistic from './routes/admin/Statistic';
 
 //import logo
 import logo from './images/logo.png'
@@ -39,8 +48,9 @@ import BackToTopButton from './components/BackToTopButton'; // Import nút Trở
 
 const App = () => {
   return (
-    <ThemeProvider> 
+    <UserProvider>
       <CartProvider>
+
     <Router>
       <Helmet>
         <title>NeoPlaton</title>
@@ -62,6 +72,14 @@ const App = () => {
           <Route path="/news" element={<NewPage />} />
           <Route path="/news/:id" element={<NewsDetailPage/>} />
           <Route path="/cart" element={<CartDetailPage/>}/>
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/product-detail/:id" element={<ProductDetailPage />} />
+          <Route path="/user-profile/:id" element={<UserProfilePage />} />
+          <Route path="/order-history/:userId" element={<OrderHistoryPage />} />
+        
+          <Route path="*" element={<Footer />} />
+          <Route path="*" element={<AdBanner />} />
+
         </Route>
 
          {/* Layout dành cho Admin */}
@@ -74,13 +92,16 @@ const App = () => {
           <Route path="settings" element={<Settings />} />
           <Route path="categories" element={<Categories />} />
           <Route path="users" element={<AdminUsers />} />
+          <Route path="statistic" element={<Statistic />} />
         </Route>
-      </Routes>
+        <Route path="*" element={<NotFound />} />
+        </Routes>
       <BackToTopButton />
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeButton rtl={false} pauseOnFocusLoss draggable pauseOnHover />
 
     </Router>
     </CartProvider>
-    </ThemeProvider>
+    </UserProvider>
 
   );
 };

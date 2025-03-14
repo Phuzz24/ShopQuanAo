@@ -3,10 +3,9 @@ import { Helmet } from "react-helmet";
 import About from '../components/About'
 import SliderComponent from '../components/SliderComponent';
 import CustomerReviews from '../components/CustomerReview';
-import SocialLinks from '../components/SocialLinks';
-import Footer from '../components/Footer';
 import AdModal from '../components/AdModal';
-
+import HotPage from './HotPage';
+import AdBanner from '../components/AdBanner';
 const HomePage = () => {
   return (
     <div>
@@ -15,12 +14,13 @@ const HomePage = () => {
       </Helmet>
       {/*Quảng cáo */}
       <AdModal />
+      <AdBanner/>
 
       
       <SliderComponent />
       <About />
+      <HotPage />
       <CustomerReviews />
-      <Footer />
 
     </div>
   );
