@@ -1,121 +1,130 @@
-import React, { useState } from "react";
-import { FaSearch, FaPlus, FaEdit, FaTrashAlt } from "react-icons/fa";
-import { useTheme } from "../../context/ThemeContext"; // Import ThemeContext
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Plus, Search, Edit, Trash2, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 
-const ProductManagement = () => {
-  const { darkMode } = useTheme(); // Sử dụng chế độ tối/sáng từ ThemeContext
-  const [products, setProducts] = useState([
-    { id: 1, name: "iPhone 15", price: 15990000, category: "Điện thoại", stock: 30, image: "https://example.com/iphone.jpg", status: "Còn hàng" },
-    { id: 2, name: "Samsung Galaxy S22", price: 12990000, category: "Điện thoại", stock: 20, image: "https://example.com/samsung.jpg", status: "Còn hàng" },
-    { id: 3, name: "Google Pixel 6", price: 10990000, category: "Điện thoại", stock: 10, image: "https://example.com/pixel.jpg", status: "Còn hàng" },
+const Products = () => {
+  const [products] = useState([
+    { id: 1, name: "iPhone 14 Pro Max", category: "Apple", price: 29990000, stock: 45, status: "Còn hàng" },
+    { id: 2, name: "Samsung Galaxy S23", category: "Samsung", price: 21990000, stock: 32, status: "Còn hàng" },
+    { id: 3, name: "Xiaomi 13 Pro", category: "Xiaomi", price: 16990000, stock: 28, status: "Còn hàng" },
+    { id: 4, name: "OPPO Find X5 s", category: "OPPO", price: 19990000, stock: 18, status: "Còn hàng" },
+    { id: 5, name: "Vivo X80 Pro", category: "Vivo", price: 18990000, stock: 22, status: "Còn hàng" },
+    { id: 6, name: "Google Pixel 7 Pro", category: "Google", price: 22990000, stock: 15, status: "Còn hàng" },
+    { id: 7, name: "Nothing Phone (1)", category: "Nothing", price: 10990000, stock: 12, status: "Còn hàng" },
+    { id: 8, name: "OnePlus 10 Pro", category: "OnePlus", price: 16990000, stock: 14, status: "Còn hàng" },
+    { id: 9, name: "Realme GT Neo 3", category: "Realme", price: 12990000, stock: 20, status: "Còn hàng" },
+    { id: 10, name: "iPhone 13", category: "Apple", price: 17990000, stock: 5, status: "Sắp hết" },
   ]);
-  
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showAddProduct, setShowAddProduct] = useState(false);
 
-  // Hàm lọc sản phẩm theo tên
-  const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // Mở form thêm sản phẩm
-  const toggleAddProductForm = () => setShowAddProduct(!showAddProduct);
+  const getStatusClass = (status) => {
+    switch (status) {
+      case "Còn hàng":
+        return "bg-green-100 text-green-800";
+      case "Hết hàng":
+        return "bg-red-100 text-red-800";
+      case "Sắp hết":
+        return "bg-yellow-100 text-yellow-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
 
   return (
-    <div className={`container mx-auto p-6 ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
-      <h1 className="text-2xl font-bold mb-6">Quản lý Sản Phẩm</h1>
-
-      {/* Tìm kiếm sản phẩm */}
-      <div className="mb-6 flex justify-between items-center">
-        <div className="flex items-center space-x-4">
-          <input
-            type="text"
-            className="w-1/3 p-2 border rounded-md"
-            placeholder="Tìm kiếm sản phẩm..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <button
-            className={`p-2 ${darkMode ? 'bg-blue-600' : 'bg-blue-500'} text-white rounded-md hover:bg-blue-700`}
-            onClick={toggleAddProductForm}
-          >
-            <FaPlus className="inline mr-2" /> Thêm sản phẩm
-          </button>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold">Quản lý sản phẩm</h1>
+          <p className="text-gray-500 dark:text-gray-400">Quản lý danh sách sản phẩm trong cửa hàng</p>
         </div>
+        <Button className="bg-admin hover:bg-admin-secondary">
+          <Plus className="mr-2 h-4 w-4" /> Thêm sản phẩm
+        </Button>
       </div>
-
-      {/* Danh sách sản phẩm */}
-      <div className="overflow-x-auto bg-white shadow-md rounded-lg">
-        <table className="min-w-full text-sm">
-          <thead className={`bg-${darkMode ? 'gray-700' : 'gray-100'} text-left`}>
-            <tr>
-              <th className="p-4">Sản phẩm</th>
-              <th className="p-4">Giá</th>
-              <th className="p-4">Số lượng</th>
-              <th className="p-4">Trạng thái</th>
-              <th className="p-4">Hành động</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProducts.map((product) => (
-              <tr key={product.id} className={`border-t ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                <td className="p-4">
-                  <img src={product.image} alt={product.name} className="w-20 h-20 object-cover rounded-md" />
-                  <span className="ml-4">{product.name}</span>
-                </td>
-                <td className="p-4">{product.price.toLocaleString()} VND</td>
-                <td className="p-4">{product.stock}</td>
-                <td className="p-4">{product.status}</td>
-                <td className="p-4 flex space-x-2">
-                  <button className={`p-2 ${darkMode ? 'bg-yellow-500' : 'bg-yellow-400'} text-white rounded-md hover:bg-yellow-600`}>
-                    <FaEdit />
-                  </button>
-                  <button className={`p-2 ${darkMode ? 'bg-red-500' : 'bg-red-400'} text-white rounded-md hover:bg-red-600`}>
-                    <FaTrashAlt />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Thêm sản phẩm (Form) */}
-      {showAddProduct && (
-        <div className={`mt-6 bg-white p-6 rounded-lg shadow-md ${darkMode ? 'bg-gray-700 text-white' : 'bg-gray-100'}`}>
-          <h2 className="text-xl font-semibold mb-4">Thêm sản phẩm mới</h2>
-          <form>
-            <div className="mb-4">
-              <label className="block mb-2">Tên sản phẩm</label>
-              <input type="text" className="w-full p-2 border rounded-md" placeholder="Nhập tên sản phẩm" />
+      
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex justify-between items-center">
+            <CardTitle>Danh sách sản phẩm</CardTitle>
+            <div className="relative w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+              <Input type="search" placeholder="Tìm kiếm sản phẩm..." className="pl-9" />
             </div>
-            <div className="mb-4">
-              <label className="block mb-2">Giá</label>
-              <input type="number" className="w-full p-2 border rounded-md" placeholder="Nhập giá sản phẩm" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left font-medium p-3">ID</th>
+                  <th className="text-left font-medium p-3">Tên sản phẩm</th>
+                  <th className="text-left font-medium p-3">Loại</th>
+                  <th className="text-left font-medium p-3">Giá</th>
+                  <th className="text-left font-medium p-3">Tồn kho</th>
+                  <th className="text-left font-medium p-3">Trạng thái</th>
+                  <th className="text-right font-medium p-3">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((product) => (
+                  <tr key={product.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
+                    <td className="p-3">{product.id}</td>
+                    <td className="p-3 font-medium">{product.name}</td>
+                    <td className="p-3">{product.category}</td>
+                    <td className="p-3">{product.price.toLocaleString('vi-VN')}₫</td>
+                    <td className="p-3">{product.stock}</td>
+                    <td className="p-3">
+                      <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(product.status)}`}>
+                        {product.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="flex items-center justify-between mt-6">
+            <div className="text-sm text-gray-500">
+              Hiển thị 1-10 của 25 sản phẩm
             </div>
-            <div className="mb-4">
-              <label className="block mb-2">Số lượng</label>
-              <input type="number" className="w-full p-2 border rounded-md" placeholder="Nhập số lượng" />
+            <div className="flex gap-1">
+              <Button variant="outline" size="icon" className="h-8 w-8">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8 bg-admin-muted">
+                1
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8">
+                2
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8">
+                3
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
-            <div className="mb-4">
-              <label className="block mb-2">Trạng thái</label>
-              <select className="w-full p-2 border rounded-md">
-                <option value="Còn hàng">Còn hàng</option>
-                <option value="Hết hàng">Hết hàng</option>
-              </select>
-            </div>
-            <div className="mb-4">
-              <label className="block mb-2">Hình ảnh</label>
-              <input type="file" className="w-full p-2 border rounded-md" />
-            </div>
-            <button type="submit" className="w-full py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-              Thêm sản phẩm
-            </button>
-          </form>
-        </div>
-      )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
 
-export default ProductManagement;
+export default Products;

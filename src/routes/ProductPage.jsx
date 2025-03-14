@@ -1,123 +1,126 @@
-import React, { useState } from 'react';
-import { Helmet } from "react-helmet";
-import { FaShoppingCart, FaStar, FaSearch } from 'react-icons/fa';
-import { motion } from 'framer-motion';
-import { useCart } from '../context/CartContext'; // Import useCart từ CartContext
-
-const sampleProducts = [
-  { id: 1, name: "iPhone 15", category: "iPhone", price: 15990000, image: "https://i.gadgets360cdn.com/large/iphone_15_series_models_1694757260405.jpg", rating: 4.5 },
-  { id: 2, name: "Samsung Galaxy S22", category: "Samsung", price: 12990000, image: "https://via.placeholder.com/150?text=Samsung+Galaxy+S22", rating: 4.8 },
-  { id: 3, name: "Google Pixel 6", category: "Google", price: 10990000, image: "https://via.placeholder.com/150?text=Google+Pixel+6", rating: 4.7 },
-  { id: 4, name: "OnePlus 9", category: "OnePlus", price: 8990000, image: "https://via.placeholder.com/150?text=OnePlus+9", rating: 4.6 },
-];
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';  // Import Link from react-router-dom
+import ProductCard from '../components/ProductCard';  // Component hiển thị sản phẩm
+import { FaShoppingCart } from 'react-icons/fa';  // Icon shopping cart
+import { useCart } from "../context/CartContext";
 
 const ProductPage = () => {
-  const [cart, setCart] = useState([]);
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("Tất cả");
-  const [priceRange, setPriceRange] = useState([0, 20000000]);
-  const { addToCart } = useCart(); // Lấy hàm addToCart từ CartContext
+  const [products, setProducts] = useState([]);
+  const { addToCart } = useCart();
 
-  const handleAddToCart = (product) => {
-    addToCart(product); // Thêm sản phẩm vào giỏ hàng
-  };
+  // Mock data (dữ liệu sản phẩm giả)
+  const mockProducts = [
+    {
+      id: 1,
+      name: "iPhone 14 Pro Max",
+      price: 29990000,
+      category: "Apple",
+      description: "Mô tả về iPhone 14 Pro Max.",
+      status: "Còn hàng",
+      image: "https://example.com/iphone14.jpg",
+    },
+    {
+      id: 2,
+      name: "Samsung Galaxy S23",
+      price: 19990000,
+      category: "Samsung",
+      description: "Mô tả về Samsung Galaxy S23.",
+      status: "Hết hàng",
+      image: "https://example.com/samsung.jpg",
+    },
+    {
+      id: 3,
+      name: "Xiaomi 13 Pro",
+      price: 17990000,
+      category: "Xiaomi",
+      description: "Mô tả về Xiaomi 13 Pro.",
+      status: "Còn hàng",
+      image: "https://example.com/xiaomi.jpg",
+    },
+    {
+      id: 1,
+      name: "iPhone 14 Pro Max",
+      price: 29990000,
+      category: "Apple",
+      description: "Mô tả về iPhone 14 Pro Max.",
+      status: "Còn hàng",
+      image: "https://example.com/iphone14.jpg",
+    },
+    {
+      id: 2,
+      name: "Samsung Galaxy S23",
+      price: 19990000,
+      category: "Samsung",
+      description: "Mô tả về Samsung Galaxy S23.",
+      status: "Hết hàng",
+      image: "https://example.com/samsung.jpg",
+    },
+    {
+      id: 3,
+      name: "Xiaomi 13 Pro",
+      price: 17990000,
+      category: "Xiaomi",
+      description: "Mô tả về Xiaomi 13 Pro.",
+      status: "Còn hàng",
+      image: "https://example.com/xiaomi.jpg",
+    }
+  ];
 
-  const filteredProducts = sampleProducts.filter((product) => {
-    return (
-      product.name.toLowerCase().includes(search.toLowerCase()) &&
-      (category === "Tất cả" || product.category === category) &&
-      product.price >= priceRange[0] &&
-      product.price <= priceRange[1]
-    );
-  });
+  useEffect(() => {
+    setProducts(mockProducts);
+  }, []);
 
   return (
-    <div className="container mx-auto py-10 px-4">
-      <Helmet>
-        <title>
-          Sản phẩm
-          </title>  
-              </Helmet>
-      <h1 className="text-4xl font-bold text-center text-red-600 mb-10">Danh Mục Điện Thoại</h1>
+    <div className="max-w-screen-xl mx-auto p-6">
+      <h2 className="text-3xl font-bold text-center mb-6">Danh sách Sản phẩm</h2>
 
-      {/* Bộ lọc và tìm kiếm */}
-      <div className="flex flex-col md:flex-row justify-between mb-6 gap-4">
-        <div className="relative w-full md:w-1/3">
-          <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-          <input
-            type="text"
-            placeholder="Tìm kiếm sản phẩm..."
-            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <select
-          className="w-full md:w-1/4 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-        >
-          <option value="Tất cả">Tất cả</option>
-          <option value="iPhone">iPhone</option>
-          <option value="Samsung">Samsung</option>
-          <option value="Google">Google</option>
-          <option value="OnePlus">OnePlus</option>
-        </select>
-        <input
-          type="range"
-          min="0"
-          max="10000000"
-          step="500000"
-          value={priceRange[1]}
-          onChange={(e) => setPriceRange([0, Number(e.target.value)])}
-          className="w-full md:w-1/4"
-        />
-        <span className="text-gray-700">Giá: {priceRange[1].toLocaleString()} VND</span>
-      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {products.map((product) => (
+          <div key={product.id} className="bg-white p-6 rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 relative">
+            <Link to={`/product-detail/${product.id}`} className="block">
+              {/* Hình ảnh sản phẩm */}
+              <img
+                src={product.image}
+                alt={product.name}
+                className="w-full h-64 object-cover rounded-xl transition-all duration-300 hover:opacity-90"
+              />
+            </Link>
+           
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {filteredProducts.map((product) => (
-          <motion.div
-            key={product.id}
-            className="bg-white p-4 rounded-lg shadow-lg hover:shadow-2xl transition-all"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            whileHover={{
-              scale: 1.05,
-              y: -5,
-              boxShadow: "0 10px 20px rgba(0, 0, 0, 0.1)",
-              transition: { duration: 0.3, ease: "easeOut" },
-            }}
-          >
-            {/* Hiệu ứng hover chỉ áp dụng cho hình ảnh */}
-            <motion.img
-              src={product.image}
-              alt={product.name}
-              className="w-full h-60 object-cover rounded-lg mb-4 transition-all duration-300 transform hover:scale-110"
-            />
-            {/* Tên sản phẩm sẽ không có hiệu ứng phóng to khi hover vào */}
-            <motion.h2
-              className="text-xl font-bold text-gray-800 hover:text-blue-600 transition-colors duration-200"
-              whileHover={{ scale: 1.05 }} // Tăng nhẹ khi hover vào tên sản phẩm
-            >
-              {product.name}
-            </motion.h2>
-            <p className="text-lg text-red-500 font-semibold">{product.price.toLocaleString()} VND</p>
-            <div className="flex items-center gap-1 my-2">
-              {[...Array(5)].map((_, i) => (
-                <FaStar key={i} className={i < Math.round(product.rating) ? "text-yellow-400" : "text-gray-300"} />
-              ))}
-              <span className="text-gray-600 ml-2">({product.rating})</span>
+            <div className="mt-4">
+            <Link to={`/product-detail/${product.id}`} className="block">
+
+              <h3 className="text-xl font-semibold text-gray-800 hover:text-blue-600">{product.name}</h3>
+            </Link>
+              <div className="flex items-center mt-2">
+                {/* Giá hiển thị chữ đậm và màu sắc khác */}
+                <p className="text-lg font-bold text-red-700 mr-3">
+                  {product.price.toLocaleString('vi-VN')} VND
+                </p>
+              </div>
             </div>
-            <motion.button
-              className="w-full mt-3 bg-blue-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 hover:bg-blue-500 transition-all duration-300"
-              onClick={() => handleAddToCart(product)} // Gọi addToCart khi nhấn vào nút
-              whileTap={{ scale: 0.95 }} // Hiệu ứng khi nhấn nút
-            >
-              <FaShoppingCart /> Thêm vào giỏ hàng
-            </motion.button>
-          </motion.div>
+            <div className="mt-2">
+              {/* Mô tả ngắn về sản phẩm */}
+              <p className="text-sm text-gray-600">{product.description}</p>
+            </div>
+            {/* Category và trạng thái hàng nằm ngang */}
+            <div className="flex items-center space-x-4 mt-2">
+              <span className="inline-block px-4 py-2 text-sm font-medium rounded-full bg-gray-100 text-gray-700">
+                {product.category}
+              </span>
+              <span className="inline-block px-4 py-2 text-sm font-medium rounded-full bg-green-100 text-green-700">
+                {product.status || 'Trạng thái không rõ'}
+              </span>
+            </div>
+
+            <div className="mt-4 flex items-center justify-center space-x-2">
+              <button 
+                onClick={() => addToCart(product)}
+              className="flex items-center justify-center w-full py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:bg-gradient-to-l hover:from-indigo-400 hover:to-purple-500 transition-all">
+                <FaShoppingCart className="mr-2 text-lg" /> Thêm vào giỏ
+              </button>
+            </div>
+          </div>
         ))}
       </div>
     </div>

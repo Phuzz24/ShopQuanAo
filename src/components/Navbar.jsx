@@ -1,24 +1,33 @@
 import React, { useState } from "react";
-import { FaShoppingBag, FaSearch } from "react-icons/fa";
+import { FaShoppingBag, FaSearch, FaUserCircle } from "react-icons/fa";  // Import FaUserCircle
 import { Link } from "react-router-dom";
 import { useCart } from "../context/CartContext";
-import { CartSlidebar } from "./CartSlidebar"; // Import CartSlidebar component
+import CartSlidebar from "./CartSlidebar"; 
+import { useUser } from '../context/UserContext';  // Import useUser
+import { toast } from 'react-toastify';  // Import react-toastify
+
 
 const Navbar = () => {
   const [showCart, setShowCart] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // To handle mobile menu toggle
   const { cart } = useCart();
+  const { user, logout } = useUser();  // Lấy thông tin người dùng và hàm logout
+
+  const [showDropdown, setShowDropdown] = useState(false);  // State để kiểm soát menu dropdown
 
   const toggleCart = () => {
     setShowCart(!showCart);
   };
 
-  const [showSubmenuAo, setShowSubmenuAo] = useState(false);
-  const [showSubmenuQuan, setShowSubmenuQuan] = useState(false);
-
-  // Định nghĩa hàm getTotalItems để tính tổng số lượng sản phẩm trong giỏ hàng
   const getTotalItems = () => {
     return cart.reduce((total, product) => total + product.quantity, 0);
+  };
+
+  const handleLogout = () => {
+    logout();
+    toast.success("Đăng xuất thành công!", {
+      position: toast.POSITION.TOP_RIGHT,
+    });
   };
 
   return (
@@ -26,7 +35,7 @@ const Navbar = () => {
       <div className="container mx-auto flex justify-between items-center">
         {/* Logo */}
         <Link to="/home" className="text-3xl font-bold text-red-600">
-          NEO<span className="text-black"> PLATTON</span>
+          NEO<span className="text-black">PLATTON</span>
         </Link>
 
         {/* Thanh tìm kiếm */}
@@ -44,19 +53,8 @@ const Navbar = () => {
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           className="md:hidden text-gray-800"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            strokeWidth="2"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M4 6h16M4 12h16M4 18h16"
-            />
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
 
@@ -73,79 +71,17 @@ const Navbar = () => {
                 Sản Phẩm ▼
               </button>
             </Link>
-            {/* Submenu: Áo, Quần, Áo khoác */}
-            <div className="absolute left-0 hidden group-hover:block bg-white shadow-md w-48 py-2 z-10">
+            <div className="absolute left-0 hidden group-hover:block bg-white shadow-lg rounded-md w-48 py-2 z-10">
               <div className="flex flex-col">
-                <div
-                  className="relative group"
-                  onMouseEnter={() => setShowSubmenuAo(true)}
-                  onMouseLeave={() => setShowSubmenuAo(false)}
-                >
-                  <Link to="/product/ao" className="block px-4 py-2 hover:bg-gray-100">
-                    Điện thoại ▼
-                  </Link>
-                  {/* Submenu con của Áo */}
-                  {showSubmenuAo && (
-                    <div className="absolute left-full top-0 bg-white shadow-md w-48 py-2 z-10">
-                      <Link to="/product/ao-thun" className="block px-4 py-2 hover:bg-gray-100">
-                        iPhone
-                      </Link>
-                      <Link to="/product/ao-so-mi" className="block px-4 py-2 hover:bg-gray-100">
-                        Oppo
-                      </Link>
-                      <Link to="/product/ao-kieu" className="block px-4 py-2 hover:bg-gray-100">
-                        Samsung
-                      </Link>
-                    </div>
-                  )}
-                </div>
-
-                <div
-                  className="relative group"
-                  onMouseEnter={() => setShowSubmenuQuan(true)}
-                  onMouseLeave={() => setShowSubmenuQuan(false)}
-                >
-                  <Link to="/product/quan" className="block px-4 py-2 hover:bg-gray-100">
-                    Laptop ▼
-                  </Link>
-                  {/* Submenu con của Quần */}
-                  {showSubmenuQuan && (
-                    <div className="absolute left-full top-0 bg-white shadow-md w-48 py-2 z-10">
-                      <Link to="/product/quan-dai" className="block px-4 py-2 hover:bg-gray-100">
-                        Quần dài
-                      </Link>
-                      <Link to="/product/quan-short" className="block px-4 py-2 hover:bg-gray-100">
-                        Quần short
-                      </Link>
-                      <Link to="/product/quan-lung" className="block px-4 py-2 hover:bg-gray-100">
-                        Quần lửng
-                      </Link>
-                      <Link to="/product/quan-jeans" className="block px-4 py-2 hover:bg-gray-100">
-                        Quần jeans
-                      </Link>
-                    </div>
-                  )}
-                </div>
-
-                <Link to="/product/macbook" className="block px-4 py-2 hover:bg-gray-100">
-                  Macbook
-                </Link>
-
-                <Link to="/product/ao-khoac" className="block px-4 py-2 hover:bg-gray-100">
-                  iPad
-                </Link>
-
-                <Link to="/product/giay" className="block px-4 py-2 hover:bg-gray-100">
-                  Tai nghe
-                </Link>
+                <Link to="/product/ao" className="block px-4 py-2 hover:bg-gray-100">Điện thoại</Link>
+                <Link to="/product/quan" className="block px-4 py-2 hover:bg-gray-100">Laptop</Link>
+                <Link to="/product/macbook" className="block px-4 py-2 hover:bg-gray-100">Macbook</Link>
+                <Link to="/product/ipad" className="block px-4 py-2 hover:bg-gray-100">iPad</Link>
+                <Link to="/product/giay" className="block px-4 py-2 hover:bg-gray-100">Tai nghe</Link>
               </div>
             </div>
           </div>
 
-          {/* Các mục menu khác */}
-          <Link to="/hot" className="hover:text-red-600 transition duration-300 ease-in-out">
-            HOT
-          </Link>
           <Link to="/sale" className="hover:text-red-600 transition duration-300 ease-in-out">
             SALE TỐT
           </Link>
@@ -154,18 +90,54 @@ const Navbar = () => {
           </Link>
         </div>
 
-        {/* Các biểu tượng */}
+        {/* Hiển thị khi người dùng đã đăng nhập */}
         <div className="ml-6 flex items-center space-x-2 text-gray-800">
-          {/* Tài khoản */}
-          <Link to="/login" className="hover:text-red-600">Đăng Nhập</Link>
-          <Link to="/">/</Link>
-          <Link to="/register" className="hover:text-red-600">Đăng kí</Link>
+          {user ? (
+            <>
+              <div className="relative">
+                <button 
+                  onClick={() => setShowDropdown(!showDropdown)} 
+                  className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded-full transition duration-300"
+                >
+                  <FaUserCircle className="text-3xl text-gray-600" />
+                  <span className="text-sm text-gray-800">{user.name}</span>
+                </button>
+                {showDropdown && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white shadow-xl rounded-md border-gray-200 border">
+                    <Link 
+                      to="/user-profile" 
+                      className="block px-4 py-2 text-gray-800 hover:bg-gray-100 transition duration-200"
+                    >
+                      Xem thông tin cá nhân
+                    </Link>
+                    <Link 
+                      to="/order-history" 
+                      className="block px-4 py-2 text-gray-800 hover:bg-gray-100 transition duration-200"
+                    >
+                      Xem lịch sử đơn hàng
+                      </Link>
+                    <button 
+                      onClick={handleLogout} 
+                      className="w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-100 transition duration-200"
+                    >
+                      Đăng xuất
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <Link to="/login" className="hover:text-red-600">Đăng Nhập</Link>
+              <Link to="">/</Link>
+              <Link to="/register" className="hover:text-red-600">Đăng ký</Link>
+            </>
+          )}
 
           {/* Cart icon */}
           <button onClick={toggleCart}>
             <div className="text-xl hover:text-red-600 cursor-pointer transition duration-300 ease-in-out ml-5 relative">
               <FaShoppingBag />
-              {/* Hiển thị số lượng sản phẩm trong giỏ hàng */}
               {getTotalItems() > 0 && (
                 <span className="absolute top-0 right-0 text-xs bg-red-600 text-white rounded-full w-4 h-4 flex items-center justify-center">
                   {getTotalItems()}
@@ -174,10 +146,16 @@ const Navbar = () => {
             </div>
           </button>
         </div>
+
       </div>
 
+      {/* Thêm lớp mờ khi giỏ hàng mở */}
+      {showCart && (
+        <div className="fixed inset-0 bg-black opacity-70 z-40" onClick={toggleCart}></div>
+      )}
+
       {/* Cart Slidebar */}
-      <CartSlidebar showCart={showCart} toggleCart={toggleCart} /> {/* Add CartSlidebar here */}
+      <CartSlidebar showCart={showCart} toggleCart={toggleCart} />
     </nav>
   );
 };

@@ -6,24 +6,23 @@ import { Link } from 'react-router-dom';
 
 const RegisterPage = () => {
   return (
-    
-    <div className="flex h-screen bg-gradient-to-r from-pink-400 via-yellow-400 to-orange-400">
-    <Helmet>
-      <title>
-        Đăng kí
-      </title>
-    </Helmet>
-      {/* Logo và thương hiệu */}
-      <div className="w-1/2 flex justify-center items-center bg-white p-10">
-        <div className="text-center">
-          <Link to="/home" className="text-3xl font-bold text-red-600">
-                             NEO<span className="text-black"> PLATTON</span></Link>
-          <p className="text-xl text-gray-600 mt-2">Thương hiệu thời trang đỉnh cao</p>
+    <div className="flex h-screen bg-gray-50">
+      <Helmet>
+        <title>Đăng ký</title>
+      </Helmet>
+
+      {/* Slogan và logo */}
+      <div className="w-1/2 flex justify-center items-center bg-cover bg-center bg-no-repeat relative" style={{ backgroundImage: "url('https://cdnb.artstation.com/p/assets/images/images/041/601/775/original/ida-franzen-karlsson-background-animation.gif?1632167232')" }}>
+        <div className="absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center">
+          <div className="text-center text-white px-8">
+            <h1 className="text-4xl font-bold mb-4">Khám phá các dòng điện thoại mới nhất</h1>
+            <p className="text-xl mb-6">Cùng trải nghiệm công nghệ di động tiên tiến với giá cả phải chăng!</p>
+          </div>
         </div>
       </div>
 
       {/* Form đăng ký */}
-      <div className="w-1/2 flex justify-center items-center bg-white p-10">
+      <div className="w-full sm:w-1/2 flex justify-center items-center bg-white p-12 shadow-2xl rounded-xl mx-8">
         <motion.div
           className="w-full max-w-md p-8 bg-white shadow-xl rounded-lg border border-gray-300"
           initial={{ opacity: 0 }}
@@ -43,7 +42,7 @@ const RegisterPage = () => {
                   type="text"
                   id="username"
                   placeholder="Tên đăng nhập"
-                  className="w-full outline-none text-gray-700"
+                  className="w-full outline-none text-gray-700 placeholder-gray-400"
                 />
               </div>
             </div>
@@ -58,7 +57,7 @@ const RegisterPage = () => {
                   type="email"
                   id="email"
                   placeholder="Email của bạn"
-                  className="w-full outline-none text-gray-700"
+                  className="w-full outline-none text-gray-700 placeholder-gray-400"
                 />
               </div>
             </div>
@@ -73,7 +72,22 @@ const RegisterPage = () => {
                   type="password"
                   id="password"
                   placeholder="Mật khẩu"
-                  className="w-full outline-none text-gray-700"
+                  className="w-full outline-none text-gray-700 placeholder-gray-400"
+                />
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+                Xác nhận mật khẩu
+              </label>
+              <div className="flex items-center border border-gray-300 rounded-lg px-4 py-2 mt-2 focus-within:border-pink-500 transition duration-300">
+                <FaLock className="text-gray-500 mr-3" />
+                <input
+                  type="password"
+                  id="confirmPassword"
+                  placeholder="Xác nhận mật khẩu"
+                  className="w-full outline-none text-gray-700 placeholder-gray-400"
                 />
               </div>
             </div>
@@ -88,20 +102,21 @@ const RegisterPage = () => {
               </button>
             </div>
           </form>
-           {/* Các logo đăng nhập bên thứ 3 */}
-           <div className="flex justify-center items-center mt-6 gap-4 space-x-4">
+
+          {/* Các logo đăng nhập bên thứ 3 */}
+          <div className="flex justify-center items-center mt-6 gap-4 space-x-4">
             {/* Google Login Logo */}
-            <a href="#" className="flex items-center justify-center w-12 h-12 bg-white border border-gray-300 rounded-full hover:bg-gray-200">
+            <a href="#" className="flex items-center justify-center w-12 h-12 bg-white border border-gray-300 rounded-full hover:bg-gray-200 transition-all duration-300">
               <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Gile_use.png/120px-Gile_use.png" alt="Google logo" className="w-8 h-8" />
             </a>
 
             {/* Facebook Login Logo */}
-            <a href="#" className="flex items-center justify-center w-12 h-12 bg-white border border-gray-300 rounded-full hover:bg-gray-200">
+            <a href="#" className="flex items-center justify-center w-12 h-12 bg-white border border-gray-300 rounded-full hover:bg-gray-200 transition-all duration-300">
               <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/Facebook_f_logo_%282019%29.svg" alt="Facebook logo" className="w-8 h-8" />
             </a>
 
             {/* GitHub Login Logo */}
-            <a href="#" className="flex items-center justify-center w-12 h-12 bg-white border border-gray-300 rounded-full hover:bg-gray-200">
+            <a href="#" className="flex items-center justify-center w-12 h-12 bg-white border border-gray-300 rounded-full hover:bg-gray-200 transition-all duration-300">
               <img src="https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg" alt="GitHub logo" className="w-8 h-8" />
             </a>
           </div>

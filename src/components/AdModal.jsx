@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react';
 
 const AdModal = () => {
-  const [isModalVisible, setIsModalVisible] = useState(true);
+  const [isModalVisible, setIsModalVisible] = useState(false);
 
-  // Kiểm tra xem quảng cáo đã được tắt chưa
   useEffect(() => {
-    const adClosed = localStorage.getItem('adClosed');
-    if (adClosed === 'true') {
-      setIsModalVisible(false);
+    const lastVisitTime = localStorage.getItem('lastVisitTime');
+    const currentTime = new Date().getTime();
+    
+    // Nếu lần truy cập trước đó đã quá 15-30 phút (900000 - 1800000 ms)
+    if (!lastVisitTime || currentTime - lastVisitTime > Math.random() * (1800000 - 900000) + 900000) {
+      setIsModalVisible(true);
     }
+    
+    // Cập nhật thời gian truy cập lần này
+    localStorage.setItem('lastVisitTime', currentTime);
   }, []);
 
   const handleCloseAd = () => {
