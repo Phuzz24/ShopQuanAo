@@ -11,6 +11,7 @@ const axios = require('axios');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const sendEmail = require('./utils/sendEmail'); // Thêm dòng này vào phần import
 const moment = require('moment-timezone');
 const { poolPromise } = require('./db');
 require('dotenv').config();
@@ -226,15 +227,17 @@ app.post('/api/zalopay/check-status', authenticateToken, async (req, res) => {
 
 // Endpoint xử lý callback từ ZaloPay
 // API xử lý callback từ ZaloPay
+// backend/index.js
+// backend/index.js
 app.post('/api/zalopay-callback', async (req, res) => {
   const { data, mac } = req.body;
 
-  console.log('ZaloPay Callback received:', { data, mac });
+  console.log('[ZaloPay Callback] Received:', { data, mac });
 
   try {
     const computedMac = CryptoJS.HmacSHA256(data, ZLP_CONFIG.key2).toString();
     if (computedMac !== mac) {
-      console.error('ZaloPay Callback: Invalid mac', { computedMac, mac });
+      console.error('[ZaloPay Callback] Invalid mac:', { computedMac, mac });
       return res.json({ return_code: -1, return_message: 'Chữ ký không hợp lệ' });
     }
 
@@ -243,7 +246,7 @@ app.post('/api/zalopay-callback', async (req, res) => {
     const embedData = JSON.parse(dataJson.embed_data);
     const orderId = embedData.orderId;
 
-    console.log('Parsed callback data:', { app_trans_id, zp_trans_id, orderId });
+    console.log('[ZaloPay Callback] Parsed data:', { app_trans_id, zp_trans_id, orderId });
 
     const queryParams = {
       app_id: ZLP_CONFIG.app_id,
@@ -256,11 +259,11 @@ app.post('/api/zalopay-callback', async (req, res) => {
     const queryResponse = await axios.post(`${ZLP_CONFIG.endpoint}query`, null, { params: queryParams });
     const queryResult = queryResponse.data;
 
-    console.log('ZaloPay Query response:', queryResult);
+    console.log('[ZaloPay Callback] Query response:', queryResult);
 
     const status = queryResult.return_code;
 
-    console.log(`ZaloPay Callback: Processing for order ${orderId}, status: ${status}`);
+    console.log(`[ZaloPay Callback] Processing for order ${orderId}, status: ${status}`);
 
     const pool = await poolPromise;
     const transaction = pool.transaction();
@@ -279,11 +282,11 @@ app.post('/api/zalopay-callback', async (req, res) => {
         return res.json({ return_code: -1, return_message: 'Đơn hàng không tồn tại' });
       }
 
+      const order = orderCheck.recordset[0];
       const transactionId = zp_trans_id ? zp_trans_id.toString() : `TXN${Date.now()}${Math.floor(Math.random() * 10000)}`;
 
       if (status === 1) {
         // Thanh toán thành công
-        // Không cần cập nhật Order.Status, giữ nguyên 'Chờ xác nhận'
         const paymentUpdateResult = await transaction.request()
           .input('OrderId', sql.VarChar(50), orderId)
           .input('PaymentDate', sql.DateTime, moment().tz('Asia/Ho_Chi_Minh').toDate())
@@ -293,22 +296,93 @@ app.post('/api/zalopay-callback', async (req, res) => {
             SET Status = N'Đã thanh toán', PaymentDate = @PaymentDate, TransactionId = @TransactionId
             WHERE OrderId = @OrderId
           `);
-        console.log('Payment update result:', paymentUpdateResult);
+        console.log('[ZaloPay Callback] Payment update result:', paymentUpdateResult);
 
         if (paymentUpdateResult.rowsAffected[0] === 0) {
           console.error(`[ZaloPay Callback] No payment record found for OrderId: ${orderId}`);
         }
 
+        // Lấy danh sách sản phẩm trong đơn hàng để gửi email
+        const itemsResult = await transaction.request()
+          .input('OrderId', sql.VarChar(50), orderId)
+          .query(`
+            SELECT oi.ProductId, oi.Quantity, oi.Price, p.Name
+            FROM OrderItems oi
+            JOIN Products p ON oi.ProductId = p.ProductId
+            WHERE oi.OrderId = @OrderId
+          `);
+        const items = itemsResult.recordset;
+
+        // Commit transaction trước khi gửi email
+        await transaction.commit();
+        console.log('[ZaloPay Callback] Transaction committed successfully for orderId:', orderId);
+
+        // Gửi email thông báo sau khi thanh toán thành công
+        console.log('[ZaloPay Callback] Preparing to send email to:', order.Email);
+        const subject = `Xác Nhận Thanh Toán Đơn Hàng #${orderId} - NeoPlaton Shop`;
+        const htmlContent = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <h2 style="color: #4A90E2;">Xác Nhận Thanh Toán Đơn Hàng</h2>
+            <p>Xin chào ${order.FullName || 'Khách hàng'},</p>
+            <p>Thanh toán cho đơn hàng của bạn đã được xác nhận thành công với mã số: <strong>${orderId}</strong>.</p>
+            
+            <h3 style="color: #4A90E2;">Thông Tin Đơn Hàng</h3>
+            <p><strong>Mã đơn hàng:</strong> ${orderId}</p>
+            <p><strong>Ngày đặt hàng:</strong> ${moment(order.OrderDate).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss')}</p>
+            <p><strong>Tổng tiền:</strong> ${order.Total.toLocaleString('vi-VN')} VNĐ</p>
+            <p><strong>Phương thức thanh toán:</strong> ${order.PaymentMethod}</p>
+            <p><strong>Địa chỉ giao hàng:</strong> ${order.Address}</p>
+            <p><strong>Dự kiến giao hàng:</strong> ${
+              order.EstimatedDeliveryDate
+                ? moment(order.EstimatedDeliveryDate).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY')
+                : 'Chưa xác định'
+            }</p>
+            
+            <h3 style="color: #4A90E2;">Chi Tiết Sản Phẩm</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="background-color: #f5f5f5;">
+                  <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: left;">Sản phẩm</th>
+                  <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: center;">Số lượng</th>
+                  <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: right;">Giá</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items
+                  .map(
+                    (item) => `
+                      <tr>
+                        <td style="border: 1px solid #e0e0e0; padding: 8px;">${item.Name}</td>
+                        <td style="border: 1px solid #e0e0e0; padding: 8px; text-align: center;">${item.Quantity}</td>
+                        <td style="border: 1px solid #e0e0e0; padding: 8px; text-align: right;">${(item.Price * item.Quantity).toLocaleString('vi-VN')} VNĐ</td>
+                      </tr>
+                    `
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+            
+            <p style="margin-top: 20px;">Chúng tôi sẽ xử lý đơn hàng của bạn sớm nhất có thể. Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ với chúng tôi qua email: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a>.</p>
+            <p>Trân trọng,<br/><strong>NeoPlaton Shop</strong></p>
+          </div>
+        `;
+
+        const emailSent = await sendEmail(order.Email, subject, htmlContent);
+
+        if (!emailSent) {
+          console.warn(`[ZaloPay Callback] Warning: Order ${orderId} payment confirmed, but failed to send email to ${order.Email}`);
+        } else {
+          console.log(`[ZaloPay Callback] Email sent successfully to ${order.Email} for orderId: ${orderId}`);
+        }
+
         console.log(`[ZaloPay Callback] Thanh toán thành công cho đơn hàng ${orderId}`);
       } else {
         // Thanh toán thất bại: Xóa đơn hàng và khôi phục tồn kho
-        // Lấy danh sách sản phẩm trong đơn hàng
         const itemsResult = await transaction.request()
           .input('OrderId', sql.VarChar(50), orderId)
           .query('SELECT ProductId, Quantity FROM OrderItems WHERE OrderId = @OrderId');
         const items = itemsResult.recordset;
 
-        // Khôi phục tồn kho
         for (const item of items) {
           await transaction.request()
             .input('ProductId', sql.Int, item.ProductId)
@@ -316,29 +390,26 @@ app.post('/api/zalopay-callback', async (req, res) => {
             .query('UPDATE Products SET Stock = Stock + @Quantity WHERE ProductId = @ProductId');
         }
 
-        // Xóa OrderItems
         await transaction.request()
           .input('OrderId', sql.VarChar(50), orderId)
           .query('DELETE FROM OrderItems WHERE OrderId = @OrderId');
 
-        // Xóa Payments
         await transaction.request()
           .input('OrderId', sql.VarChar(50), orderId)
           .query('DELETE FROM Payments WHERE OrderId = @OrderId');
 
-        // Xóa Orders
         await transaction.request()
           .input('OrderId', sql.VarChar(50), orderId)
           .query('DELETE FROM Orders WHERE OrderId = @OrderId');
 
+        await transaction.commit();
         console.log(`[ZaloPay Callback] Thanh toán thất bại, đơn hàng ${orderId} đã bị xóa`);
       }
-
-      await transaction.commit();
 
       res.json({ return_code: 1, return_message: 'Xử lý callback thành công' });
     } catch (err) {
       await transaction.rollback();
+      console.error('[ZaloPay Callback] Transaction rolled back due to error:', err.message, err.stack);
       throw err;
     }
   } catch (err) {
@@ -346,7 +417,6 @@ app.post('/api/zalopay-callback', async (req, res) => {
     res.json({ return_code: -1, return_message: `Lỗi server: ${err.message}` });
   }
 });
-
 //API Upload avt
 // Cấu hình multer chung
 const createStorage = (destinationPath) => multer.diskStorage({
@@ -652,7 +722,384 @@ app.get('/api/products/:id', async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi server: ' + err.message });
   }
 });
+const router = express.Router();
 
+//API Thông báo
+// Định nghĩa các route cho thông báo
+router.get('/notifications', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  console.log(`[${new Date().toISOString()}] Fetching notifications for userId: ${userId}`);
+
+  try {
+    const notifications = await knex('Notifications')
+      .where('UserId', userId)
+      .select('NotificationId', 'Title', 'Message', 'IsRead', 'CreatedAt');
+
+    console.log(`[${new Date().toISOString()}] Fetched ${notifications.length} notifications for userId: ${userId}`);
+    res.status(200).json({ success: true, notifications });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error fetching notifications for userId: ${userId}, Error:`, error.message);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
+router.get('/notifications', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  console.log(`[${new Date().toISOString()}] Fetching notifications for userId: ${userId}`);
+
+  try {
+    const notifications = await knex('Notifications')
+      .where('UserId', userId)
+      .select('NotificationId', 'Title', 'Message', 'IsRead', 'CreatedAt');
+
+    console.log(`[${new Date().toISOString()}] Fetched ${notifications.length} notifications for userId: ${userId}`);
+    res.status(200).json({ success: true, notifications });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error fetching notifications for userId: ${userId}, Error:`, error.message);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
+
+
+// Đánh dấu thông báo đã đọc
+router.put('/notifications/:id/read', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const notificationId = parseInt(req.params.id);
+  console.log(`[${new Date().toISOString()}] Request received: PUT /api/notifications/${notificationId}/read for userId: ${userId}`);
+
+  try {
+    console.log(`[${new Date().toISOString()}] Checking if notification ${notificationId} exists for userId: ${userId}`);
+    const notification = await knex('Notifications')
+      .where({ NotificationId: notificationId, UserId: userId })
+      .first();
+
+    if (!notification) {
+      console.log(`[${new Date().toISOString()}] Notification ${notificationId} not found for userId: ${userId}`);
+      return res.status(404).json({ success: false, message: 'Thông báo không tồn tại' });
+    }
+
+    console.log(`[${new Date().toISOString()}] Notification ${notificationId} found, marking as read`);
+    await knex('Notifications')
+      .where({ NotificationId: notificationId })
+      .update({ IsRead: true });
+
+    console.log(`[${new Date().toISOString()}] Successfully marked notification ${notificationId} as read for userId: ${userId}`);
+    res.status(200).json({ success: true, message: 'Đã đánh dấu thông báo là đã đọc' });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error marking notification ${notificationId} as read for userId: ${userId}, Error:`, error.message, error.stack);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
+// Gắn router vào ứng dụng với tiền tố /api
+app.use('/api', router);
+
+// POST /api/wishlist - Thêm sản phẩm vào wishlist
+app.post('/api/wishlist', authenticateToken, async (req, res) => {
+  const userId = req.user.UserId;
+  const { productId } = req.body;
+
+  console.log(`[${new Date().toISOString()}] [POST /api/wishlist] Adding product ${productId} to wishlist for userId: ${userId}`);
+
+  if (!productId) {
+    console.log(`[${new Date().toISOString()}] [POST /api/wishlist] Missing productId in request body`);
+    return res.status(400).json({ success: false, message: 'Thiếu productId' });
+  }
+
+  try {
+    const pool = await poolPromise;
+
+    // Kiểm tra xem sản phẩm đã có trong wishlist chưa
+    console.log(`[${new Date().toISOString()}] [POST /api/wishlist] Checking if product ${productId} already exists in wishlist for userId: ${userId}`);
+    const existingItem = await pool.request()
+      .input('UserId', sql.Int, userId)
+      .input('ProductId', sql.Int, productId)
+      .query(`
+        SELECT * FROM Wishlist
+        WHERE UserId = @UserId AND ProductId = @ProductId
+      `);
+
+    if (existingItem.recordset.length > 0) {
+      console.log(`[${new Date().toISOString()}] [POST /api/wishlist] Product ${productId} already in wishlist for userId: ${userId}`);
+      return res.status(400).json({ success: false, message: 'Sản phẩm đã có trong danh sách yêu thích' });
+    }
+
+    // Thêm sản phẩm vào wishlist
+    console.log(`[${new Date().toISOString()}] [POST /api/wishlist] Inserting product ${productId} into wishlist for userId: ${userId}`);
+    const result = await pool.request()
+      .input('UserId', sql.Int, userId)
+      .input('ProductId', sql.Int, productId)
+      .query(`
+        INSERT INTO Wishlist (UserId, ProductId)
+        VALUES (@UserId, @ProductId);
+        SELECT SCOPE_IDENTITY() AS WishlistId;
+      `);
+
+    const wishlistId = result.recordset[0].WishlistId;
+    console.log(`[${new Date().toISOString()}] [POST /api/wishlist] Successfully added product ${productId} to wishlist with wishlistId: ${wishlistId}`);
+
+    res.status(201).json({ success: true, message: 'Đã thêm sản phẩm vào danh sách yêu thích', wishlistId });
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] [POST /api/wishlist] Error adding product ${productId} for userId: ${userId}:`, err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
+  }
+});
+
+// GET /api/wishlist - Lấy danh sách wishlist
+app.get('/api/wishlist', authenticateToken, async (req, res) => {
+  const userId = req.user.UserId;
+  console.log(`[${new Date().toISOString()}] [GET /api/wishlist] Fetching wishlist for userId: ${userId}`);
+
+  try {
+    const pool = await poolPromise;
+
+    // Bước 1: Lấy danh sách sản phẩm trong wishlist
+    const wishlistResult = await pool.request()
+      .input('UserId', sql.Int, userId)
+      .query(`
+        SELECT w.WishlistId, p.ProductId, p.Name, p.Price, 
+               p.DiscountPercentage, p.Stock,
+               CASE 
+                 WHEN p.DiscountPercentage > 0 
+                 THEN p.Price * (1 - p.DiscountPercentage / 100) 
+                 ELSE p.Price 
+               END AS DiscountedPrice
+        FROM Wishlist w
+        JOIN Products p ON w.ProductId = p.ProductId
+        WHERE w.UserId = @UserId
+      `);
+
+    const wishlistItems = wishlistResult.recordset;
+
+    if (wishlistItems.length === 0) {
+      console.log(`[${new Date().toISOString()}] [GET /api/wishlist] No items found in wishlist for userId: ${userId}`);
+      return res.json({ success: true, wishlist: [] });
+    }
+
+    // Bước 2: Lấy danh sách ProductId từ kết quả
+    const productIds = wishlistItems.map(item => item.ProductId);
+
+    // Bước 3: Lấy hình ảnh từ bảng ProductImages
+    const imagesResult = await pool.request()
+      .query(`
+        SELECT ProductId, ImageUrl
+        FROM ProductImages
+        WHERE ProductId IN (${productIds.join(',')})
+        ORDER BY ProductId, DisplayOrder, IsPrimary DESC
+      `);
+
+    const imagesByProduct = {};
+    imagesResult.recordset.forEach(image => {
+      if (!imagesByProduct[image.ProductId]) {
+        imagesByProduct[image.ProductId] = [];
+      }
+      imagesByProduct[image.ProductId].push(image.ImageUrl);
+    });
+
+    // Bước 4: Kết hợp dữ liệu
+    const wishlist = wishlistItems.map(item => ({
+      wishlistId: item.WishlistId,
+      productId: item.ProductId,
+      name: item.Name,
+      price: item.Price,
+      discountedPrice: item.DiscountedPrice,
+      discountPercentage: item.DiscountPercentage,
+      stock: item.Stock,
+      images: imagesByProduct[item.ProductId] || ['https://via.placeholder.com/150?text=No+Image'],
+    }));
+
+    console.log(`[${new Date().toISOString()}] [GET /api/wishlist] Fetched ${wishlist.length} items for userId: ${userId}`);
+    res.json({ success: true, wishlist });
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] [GET /api/wishlist] Error fetching wishlist for userId: ${userId}:`, err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
+  }
+});
+// DELETE /api/wishlist/:wishlistId - Xóa sản phẩm khỏi wishlist
+app.delete('/api/wishlist/:wishlistId', authenticateToken, async (req, res) => {
+  const userId = req.user.UserId;
+  const wishlistId = parseInt(req.params.wishlistId);
+
+  console.log(`[${new Date().toISOString()}] [DELETE /api/wishlist/${wishlistId}] Removing wishlist item for userId: ${userId}`);
+
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('WishlistId', sql.Int, wishlistId)
+      .input('UserId', sql.Int, userId)
+      .query(`
+        DELETE FROM Wishlist
+        WHERE WishlistId = @WishlistId AND UserId = @UserId
+      `);
+
+    if (result.rowsAffected[0] === 0) {
+      console.log(`[${new Date().toISOString()}] [DELETE /api/wishlist/${wishlistId}] Wishlist item not found for userId: ${userId}`);
+      return res.status(404).json({ success: false, message: 'Không tìm thấy sản phẩm trong danh sách yêu thích' });
+    }
+
+    console.log(`[${new Date().toISOString()}] [DELETE /api/wishlist/${wishlistId}] Successfully removed wishlist item for userId: ${userId}`);
+    res.json({ success: true, message: 'Đã xóa sản phẩm khỏi danh sách yêu thích' });
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] [DELETE /api/wishlist/${wishlistId}] Error removing wishlist item for userId: ${userId}:`, err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
+  }
+});
+//API  GET đánh dấu sản phẩm đã xem
+app.get('/api/recently-viewed', authenticateToken, async (req, res) => {
+  const userId = req.user.UserId;
+  console.log(`[GET /api/recently-viewed] Fetching recently viewed products for userId: ${userId}`);
+
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('UserId', sql.Int, userId)
+      .query(`
+        SELECT rv.ProductId, p.Name, p.Price, p.DiscountPercentage, p.Stock,
+               (SELECT TOP 1 ImageUrl FROM ProductImages pi WHERE pi.ProductId = p.ProductId AND pi.IsPrimary = 1) AS ImageUrl
+        FROM RecentlyViewed rv
+        JOIN Products p ON rv.ProductId = p.ProductId
+        WHERE rv.UserId = @UserId
+        ORDER BY rv.ViewedAt DESC
+      `);
+
+    const recentlyViewed = result.recordset.map(product => ({
+      ProductId: product.ProductId,
+      Name: product.Name,
+      Price: product.Price,
+      DiscountPercentage: product.DiscountPercentage,
+      DiscountedPrice: product.DiscountPercentage > 0 ? product.Price * (1 - product.DiscountPercentage / 100) : null,
+      Stock: product.Stock,
+      images: product.ImageUrl ? [product.ImageUrl] : ['https://via.placeholder.com/150?text=No+Image'],
+    }));
+
+    res.json({ success: true, recentlyViewed });
+  } catch (err) {
+    console.error(`[GET /api/recently-viewed] Error:`, err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
+  }
+});
+//API POST đánh dấu sản phẩm đã xem
+app.post('/api/recently-viewed', authenticateToken, async (req, res) => {
+  const { productId } = req.body;
+  const userId = req.user.UserId;
+  console.log(`[POST /api/recently-viewed] Adding productId: ${productId} for userId: ${userId}`);
+
+  try {
+    const pool = await poolPromise;
+
+    // Kiểm tra sản phẩm có tồn tại không
+    const productCheck = await pool.request()
+      .input('ProductId', sql.Int, productId)
+      .query('SELECT ProductId FROM Products WHERE ProductId = @ProductId');
+    if (productCheck.recordset.length === 0) {
+      return res.status(404).json({ success: false, message: 'Sản phẩm không tồn tại' });
+    }
+
+    // Cập nhật hoặc thêm mới bản ghi trong RecentlyViewed
+    await pool.request()
+      .input('UserId', sql.Int, userId)
+      .input('ProductId', sql.Int, productId)
+      .query(`
+        IF EXISTS (SELECT 1 FROM RecentlyViewed WHERE UserId = @UserId AND ProductId = @ProductId)
+          UPDATE RecentlyViewed
+          SET ViewedAt = GETDATE()
+          WHERE UserId = @UserId AND ProductId = @ProductId
+        ELSE
+          INSERT INTO RecentlyViewed (UserId, ProductId, ViewedAt)
+          VALUES (@UserId, @ProductId, GETDATE())
+      `);
+
+    res.json({ success: true, message: 'Đã lưu sản phẩm vào danh sách đã xem' });
+  } catch (err) {
+    console.error(`[POST /api/recently-viewed] Error:`, err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
+  }
+});
+//API sản phẩm liên quan
+app.get('/api/products/related/:productId', async (req, res) => {
+  const { productId } = req.params;
+  console.log(`[GET /api/products/related/${productId}] Fetching related products`);
+
+  try {
+    const pool = await poolPromise;
+
+    // Kiểm tra sản phẩm có tồn tại không và lấy CategoryId
+    const productResult = await pool.request()
+      .input('ProductId', sql.Int, parseInt(productId))
+      .query('SELECT CategoryId FROM Products WHERE ProductId = @ProductId');
+    if (productResult.recordset.length === 0) {
+      return res.status(404).json({ success: false, message: 'Sản phẩm không tồn tại' });
+    }
+    const categoryId = productResult.recordset[0].CategoryId;
+
+    // Lấy danh sách người dùng đã mua sản phẩm này
+    const usersResult = await pool.request()
+      .input('ProductId', sql.Int, parseInt(productId))
+      .query(`
+        SELECT DISTINCT o.UserId
+        FROM Orders o
+        JOIN OrderItems oi ON o.OrderId = oi.OrderId
+        WHERE oi.ProductId = @ProductId
+      `);
+    const userIds = usersResult.recordset.map(user => user.UserId);
+
+    let relatedProducts = [];
+    if (userIds.length > 0) {
+      const relatedResult = await pool.request()
+        .query(`
+          SELECT DISTINCT p.*
+          FROM Products p
+          JOIN OrderItems oi ON p.ProductId = oi.ProductId
+          JOIN Orders o ON oi.OrderId = o.OrderId
+          WHERE o.UserId IN (${userIds.join(',')})
+            AND p.ProductId != ${parseInt(productId)}
+            AND p.Stock > 0
+          ORDER BY p.ProductId
+          OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY
+        `);
+      relatedProducts = relatedResult.recordset;
+    }
+
+    if (relatedProducts.length < 5) {
+      const categoryResult = await pool.request()
+        .input('CategoryId', sql.Int, categoryId)
+        .input('ProductId', sql.Int, parseInt(productId))
+        .query(`
+          SELECT *
+          FROM Products
+          WHERE CategoryId = @CategoryId
+            AND ProductId != @ProductId
+            AND Stock > 0
+          ORDER BY ProductId
+          OFFSET 0 ROWS FETCH NEXT ${5 - relatedProducts.length} ROWS ONLY
+        `);
+      relatedProducts = [...relatedProducts, ...categoryResult.recordset];
+    }
+
+    // Lấy hình ảnh cho từng sản phẩm liên quan từ bảng ProductImages
+    for (let product of relatedProducts) {
+      const imagesResult = await pool.request()
+        .input('ProductId', sql.Int, product.ProductId)
+        .query(`
+          SELECT ImageUrl
+          FROM ProductImages
+          WHERE ProductId = @ProductId
+          ORDER BY IsPrimary DESC, DisplayOrder ASC
+        `);
+      product.images = imagesResult.recordset.map(img => img.ImageUrl);
+      if (product.images.length === 0) {
+        product.images = ['https://via.placeholder.com/150?text=No+Image'];
+      }
+      product.DiscountedPrice =
+        product.DiscountPercentage > 0
+          ? product.Price * (1 - product.DiscountPercentage / 100)
+          : null;
+    }
+
+    res.json({ success: true, relatedProducts });
+  } catch (err) {
+    console.error(`[GET /api/products/related/${productId}] Error:`, err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
+  }
+});
 // API cập nhật thông tin người dùng
 app.put('/api/users/update', authenticateToken, async (req, res) => {
   const { UserId, FullName, Email, Phone, Address, AvatarUrl } = req.body;
@@ -732,52 +1179,85 @@ app.get('/api/brands', async (req, res) => {
   }
 });
 
-// Lấy danh sách bình luận của sản phẩm
+// API lấy danh sách bình luận của sản phẩm
 app.get('/api/reviews/:productId', async (req, res) => {
   const { productId } = req.params;
+  console.log(`[GET /api/reviews/${productId}] Fetching reviews for productId: ${productId}`);
+
   try {
     const pool = await poolPromise;
     const result = await pool.request()
-      .input('ProductId', sql.Int, productId)
+      .input('ProductId', sql.Int, parseInt(productId))
       .query(`
-        SELECT r.ReviewId, r.Rating, r.Comment, r.CreatedAt, 
-               u.Username AS UserName
+        SELECT r.ReviewId, r.ProductId, r.UserId, r.Rating, r.Comment, r.CreatedAt, u.Username
         FROM Reviews r
         JOIN Users u ON r.UserId = u.UserId
         WHERE r.ProductId = @ProductId
         ORDER BY r.CreatedAt DESC
       `);
-    res.json(result.recordset);
+
+    const reviews = result.recordset.map(review => ({
+      reviewId: review.ReviewId,
+      productId: review.ProductId,
+      userId: review.UserId,
+      username: review.Username,
+      rating: review.Rating,
+      comment: review.Comment,
+      createdAt: moment(review.CreatedAt).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss'),
+    }));
+
+    console.log(`[GET /api/reviews/${productId}] Found ${reviews.length} reviews`);
+    res.json({ success: true, reviews });
   } catch (err) {
-    console.error('Error fetching reviews:', err);
-    res.status(500).json({ success: false, message: 'Lỗi server khi lấy bình luận' });
+    console.error(`[GET /api/reviews/${productId}] Error:`, err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
   }
 });
 
-// Thêm bình luận mới
+// API thêm bình luận mới
 app.post('/api/reviews', authenticateToken, async (req, res) => {
-  const { ProductId, Rating, Comment } = req.body;
-  const UserId = req.user.userId; // Lấy từ token
+  const { productId, rating, comment } = req.body;
+  const userId = req.user.UserId;
 
-  if (!ProductId || !Rating || !Comment) {
-    return res.status(400).json({ success: false, message: 'Thiếu thông tin cần thiết' });
+  console.log('[POST /api/reviews] Received request:', { productId, userId, rating, comment });
+
+  if (!productId || !rating || rating < 1 || rating > 5) {
+    console.error('[POST /api/reviews] Error: Invalid input', { productId, rating });
+    return res.status(400).json({ success: false, message: 'Dữ liệu không hợp lệ' });
   }
 
   try {
     const pool = await poolPromise;
-    await pool.request()
-      .input('ProductId', sql.Int, ProductId)
-      .input('UserId', sql.Int, UserId)
-      .input('Rating', sql.Int, Rating)
-      .input('Comment', sql.NVarChar, Comment)
+
+    // Kiểm tra sản phẩm có tồn tại không
+    const productCheck = await pool.request()
+      .input('ProductId', sql.Int, productId)
+      .query('SELECT ProductId FROM Products WHERE ProductId = @ProductId');
+    if (productCheck.recordset.length === 0) {
+      console.error('[POST /api/reviews] Error: Product not found', { productId });
+      return res.status(404).json({ success: false, message: 'Sản phẩm không tồn tại' });
+    }
+
+    // Thêm bình luận vào database
+    const result = await pool.request()
+      .input('ProductId', sql.Int, productId)
+      .input('UserId', sql.Int, userId)
+      .input('Rating', sql.Int, rating)
+      .input('Comment', sql.NVarChar(1000), comment || null)
+      .input('CreatedAt', sql.DateTime, moment().tz('Asia/Ho_Chi_Minh').toDate())
       .query(`
-        INSERT INTO Reviews (ProductId, UserId, Rating, Comment)
-        VALUES (@ProductId, @UserId, @Rating, @Comment)
+        INSERT INTO Reviews (ProductId, UserId, Rating, Comment, CreatedAt)
+        VALUES (@ProductId, @UserId, @Rating, @Comment, @CreatedAt);
+        SELECT SCOPE_IDENTITY() AS ReviewId;
       `);
-    res.json({ success: true, message: 'Thêm bình luận thành công' });
+
+    const reviewId = result.recordset[0].ReviewId;
+    console.log(`[POST /api/reviews] Review added successfully with ReviewId: ${reviewId}`);
+
+    res.json({ success: true, message: 'Bình luận đã được gửi', reviewId });
   } catch (err) {
-    console.error('Error adding review:', err);
-    res.status(500).json({ success: false, message: 'Lỗi server khi thêm bình luận' });
+    console.error('[POST /api/reviews] Error:', err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
   }
 });
 
@@ -1193,29 +1673,36 @@ app.get('/auth/facebook/callback',
   }
 );
 //API tạo đơn hàng
+// API tạo đơn hàng
 app.post('/api/orders', authenticateToken, async (req, res) => {
-  console.log('Received request body:', req.body);
+  console.log('[POST /api/orders] Received request body:', req.body);
 
   if (!req.body.orderId) {
-    console.error('OrderId is missing in request body');
+    console.error('[POST /api/orders] Error: OrderId is missing in request body');
     return res.status(400).json({ success: false, message: 'OrderId là bắt buộc và không được để trống' });
   }
 
   const { orderId, total, address, fullName, phone, email, paymentMethod, estimatedDeliveryDate, items } = req.body;
 
-  console.log('Extracted orderId:', orderId);
+  console.log('[POST /api/orders] Extracted orderId:', orderId);
 
   if (!orderId || typeof orderId !== 'string') {
-    console.error('OrderId is invalid:', orderId);
+    console.error('[POST /api/orders] Error: OrderId is invalid:', orderId);
     return res.status(400).json({ success: false, message: 'OrderId không hợp lệ' });
   }
 
   if (!total || !address || !paymentMethod || !items?.length) {
-    console.error('Missing required fields:', { total, address, paymentMethod, items });
+    console.error('[POST /api/orders] Error: Missing required fields:', { total, address, paymentMethod, items });
     return res.status(400).json({ success: false, message: 'Thiếu thông tin cần thiết' });
   }
 
+  if (!email) {
+    console.error('[POST /api/orders] Error: Email is missing in request body');
+    return res.status(400).json({ success: false, message: 'Email là bắt buộc để gửi thông báo' });
+  }
+
   const userId = req.user.UserId;
+  console.log('[POST /api/orders] Processing order for userId:', userId);
 
   try {
     const pool = await poolPromise;
@@ -1223,31 +1710,43 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
 
     try {
       await transaction.begin();
+      console.log('[POST /api/orders] Transaction started');
 
-      // Kiểm tra xem userId có tồn tại trong bảng Users không
       const userRequest = transaction.request();
       const userCheck = await userRequest
         .input('UserId', sql.Int, userId)
         .query('SELECT UserId FROM Users WHERE UserId = @UserId');
       if (userCheck.recordset.length === 0) {
+        console.error('[POST /api/orders] Error: User does not exist - userId:', userId);
         throw new Error('Người dùng không tồn tại');
       }
+      console.log('[POST /api/orders] User verified:', userId);
 
-      // Kiểm tra tồn kho và giá sản phẩm
       for (const item of items) {
+        console.log('[POST /api/orders] Checking product - productId:', item.productId);
         const productRequest = transaction.request();
         const productCheck = await productRequest
           .input('ProductId', sql.Int, item.productId)
-          .query('SELECT Stock, Price, DiscountPercentage FROM Products WHERE ProductId = @ProductId');
+          .query('SELECT Stock, Price, DiscountPercentage, Name FROM Products WHERE ProductId = @ProductId');
         if (productCheck.recordset.length === 0) {
+          console.error('[POST /api/orders] Error: Product does not exist - productId:', item.productId);
           throw new Error(`Sản phẩm với ID ${item.productId} không tồn tại`);
         }
         const product = productCheck.recordset[0];
+        console.log('[POST /api/orders] Product found:', product);
+
         if (product.Stock < item.quantity) {
+          console.error(
+            '[POST /api/orders] Error: Insufficient stock for product - productId:',
+            item.productId,
+            'Requested quantity:',
+            item.quantity,
+            'Available stock:',
+            product.Stock
+          );
           throw new Error(`Sản phẩm ${item.productId} không đủ tồn kho (còn lại: ${product.Stock})`);
         }
 
-        // Lấy DiscountCode từ bảng Cart
         const cartRequest = transaction.request();
         const cartCheck = await cartRequest
           .input('UserId', sql.Int, userId)
@@ -1257,14 +1756,21 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
         let expectedPrice = product.Price;
         let appliedDiscountCode = null;
 
-        // Áp dụng DiscountPercentage từ bảng Products (nếu có)
         if (product.DiscountPercentage && product.DiscountPercentage > 0) {
           expectedPrice = expectedPrice * (1 - product.DiscountPercentage / 100);
+          console.log(
+            '[POST /api/orders] Applied product discount - productId:',
+            item.productId,
+            'DiscountPercentage:',
+            product.DiscountPercentage,
+            'New price:',
+            expectedPrice
+          );
         }
 
-        // Áp dụng DiscountCode từ bảng Cart (nếu có)
         if (cartCheck.recordset.length > 0 && cartCheck.recordset[0].DiscountCode) {
           const discountCode = cartCheck.recordset[0].DiscountCode;
+          console.log('[POST /api/orders] Found discount code in cart - productId:', item.productId, 'DiscountCode:', discountCode);
           const discountRequest = transaction.request();
           const discountCheck = await discountRequest
             .input('Code', sql.NVarChar, discountCode)
@@ -1279,19 +1785,50 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
             if (discount.IsActive && (!discount.ExpiryDate || new Date() <= new Date(discount.ExpiryDate))) {
               expectedPrice = expectedPrice * (1 - discount.DiscountPercentage / 100);
               appliedDiscountCode = discountCode;
+              console.log(
+                '[POST /api/orders] Applied discount code - productId:',
+                item.productId,
+                'DiscountCode:',
+                discountCode,
+                'DiscountPercentage:',
+                discount.DiscountPercentage,
+                'New price:',
+                expectedPrice
+              );
+            } else {
+              console.log(
+                '[POST /api/orders] Discount code not applicable - productId:',
+                item.productId,
+                'DiscountCode:',
+                discountCode,
+                'IsActive:',
+                discount.IsActive,
+                'ExpiryDate:',
+                discount.ExpiryDate
+              );
             }
+          } else {
+            console.log('[POST /api/orders] Discount code not found - productId:', item.productId, 'DiscountCode:', discountCode);
           }
         }
 
-        // So sánh giá
         if (Math.abs(expectedPrice - item.price) > 0.01) {
+          console.error(
+            '[POST /api/orders] Error: Price mismatch for product - productId:',
+            item.productId,
+            'Expected price:',
+            expectedPrice,
+            'Provided price:',
+            item.price
+          );
           throw new Error(`Giá của sản phẩm ${item.productId} không khớp (giá thực tế: ${expectedPrice})`);
         }
+
+        item.name = product.Name;
       }
 
-      console.log('Inserting order with OrderId:', orderId);
+      console.log('[POST /api/orders] Inserting order with OrderId:', orderId);
 
-      // Tạo đơn hàng trong bảng Orders
       const orderRequest = transaction.request();
       const orderDate = moment().tz('Asia/Ho_Chi_Minh').toDate();
       const estimatedDate = estimatedDeliveryDate
@@ -1302,7 +1839,7 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
         .input('OrderId', sql.VarChar(50), orderId)
         .input('UserId', sql.Int, userId)
         .input('OrderDate', sql.DateTime, orderDate)
-        .input('Status', sql.NVarChar(50), 'Chờ xác nhận') // Đúng yêu cầu
+        .input('Status', sql.NVarChar(50), 'Chờ xác nhận')
         .input('Total', sql.Decimal(18, 2), total)
         .input('Address', sql.NVarChar(255), address)
         .input('FullName', sql.NVarChar(100), fullName || null)
@@ -1314,9 +1851,10 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
           INSERT INTO Orders (OrderId, UserId, OrderDate, Status, Total, Address, FullName, Phone, Email, PaymentMethod, EstimatedDeliveryDate)
           VALUES (@OrderId, @UserId, @OrderDate, @Status, @Total, @Address, @FullName, @Phone, @Email, @PaymentMethod, @EstimatedDeliveryDate)
         `);
+      console.log('[POST /api/orders] Order inserted successfully:', orderId);
 
-      // Tạo các mục trong OrderItems và cập nhật tồn kho
       for (const item of items) {
+        console.log('[POST /api/orders] Inserting order item - productId:', item.productId);
         const orderItemRequest = transaction.request();
         await orderItemRequest
           .input('OrderId', sql.VarChar(50), orderId)
@@ -1327,17 +1865,20 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
             INSERT INTO OrderItems (OrderId, ProductId, Quantity, Price)
             VALUES (@OrderId, @ProductId, @Quantity, @Price)
           `);
+        console.log('[POST /api/orders] Order item inserted - productId:', item.productId);
 
+        console.log('[POST /api/orders] Updating stock - productId:', item.productId);
         const stockRequest = transaction.request();
         await stockRequest
           .input('ProductId', sql.Int, item.productId)
           .input('Quantity', sql.Int, item.quantity)
           .query('UPDATE Products SET Stock = Stock - @Quantity WHERE ProductId = @ProductId');
+        console.log('[POST /api/orders] Stock updated - productId:', item.productId);
       }
 
-      // Tạo bản ghi trong bảng Payments
+      console.log('[POST /api/orders] Inserting payment record for orderId:', orderId);
       const paymentRequest = transaction.request();
-      const initialPaymentStatus = paymentMethod === 'Thanh toán khi nhận hàng' ? 'Chưa thanh toán' : 'Đang xử lý'; // COD: 'Chưa thanh toán', Online: 'Đang xử lý'
+      const initialPaymentStatus = paymentMethod === 'Thanh toán khi nhận hàng' ? 'Chưa thanh toán' : 'Đang xử lý';
       await paymentRequest
         .input('OrderId', sql.VarChar(50), orderId)
         .input('Amount', sql.Decimal(18, 2), total)
@@ -1348,16 +1889,85 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
           INSERT INTO Payments (OrderId, Amount, Status, PaymentMethod, PaymentDate)
           VALUES (@OrderId, @Amount, @Status, @PaymentMethod, @PaymentDate)
         `);
+      console.log('[POST /api/orders] Payment record inserted for orderId:', orderId);
 
+      // Commit transaction
       await transaction.commit();
+      console.log('[POST /api/orders] Transaction committed successfully for orderId:', orderId);
+
+      // Chỉ gửi email nếu phương thức thanh toán là COD
+      if (paymentMethod === 'Thanh toán khi nhận hàng') {
+        console.log('[POST /api/orders] Payment method is COD, sending email to:', email);
+        const subject = `Xác Nhận Đơn Hàng #${orderId} - NeoPlaton Shop`;
+        const htmlContent = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <h2 style="color: #4A90E2;">Xác Nhận Đơn Hàng</h2>
+            <p>Xin chào ${fullName || 'Khách hàng'},</p>
+            <p>Cảm ơn bạn đã đặt hàng tại NeoPlaton Shop! Đơn hàng của bạn đã được ghi nhận thành công với mã số: <strong>${orderId}</strong>.</p>
+            
+            <h3 style="color: #4A90E2;">Thông Tin Đơn Hàng</h3>
+            <p><strong>Mã đơn hàng:</strong> ${orderId}</p>
+            <p><strong>Ngày đặt hàng:</strong> ${moment(orderDate).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss')}</p>
+            <p><strong>Tổng tiền:</strong> ${total.toLocaleString('vi-VN')} VNĐ</p>
+            <p><strong>Phương thức thanh toán:</strong> ${paymentMethod}</p>
+            <p><strong>Địa chỉ giao hàng:</strong> ${address}</p>
+            <p><strong>Dự kiến giao hàng:</strong> ${
+              estimatedDate ? moment(estimatedDate).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY') : 'Chưa xác định'
+            }</p>
+            
+            <h3 style="color: #4A90E2;">Chi Tiết Sản Phẩm</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="background-color: #f5f5f5;">
+                  <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: left;">Sản phẩm</th>
+                  <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: center;">Số lượng</th>
+                  <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: right;">Giá</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items
+                  .map(
+                    (item) => `
+                      <tr>
+                        <td style="border: 1px solid #e0e0e0; padding: 8px;">${item.name}</td>
+                        <td style="border: 1px solid #e0e0e0; padding: 8px; text-align: center;">${item.quantity}</td>
+                        <td style="border: 1px solid #e0e0e0; padding: 8px; text-align: right;">${(item.price * item.quantity).toLocaleString('vi-VN')} VNĐ</td>
+                      </tr>
+                    `
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+            
+            <p style="margin-top: 20px;">Chúng tôi sẽ xử lý đơn hàng của bạn sớm nhất có thể. Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ với chúng tôi qua email: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a>.</p>
+            <p>Trân trọng,<br/><strong>NeoPlaton Shop</strong></p>
+          </div>
+        `;
+
+        const emailSent = await sendEmail(email, subject, htmlContent);
+
+        if (!emailSent) {
+          console.warn(`[POST /api/orders] Warning: Order ${orderId} created, but failed to send email to ${email}`);
+        } else {
+          console.log(`[POST /api/orders] Email sent successfully to ${email} for orderId: ${orderId}`);
+        }
+      } else {
+        console.log('[POST /api/orders] Payment method is online, email will be sent after successful payment');
+      }
 
       res.json({ success: true, message: 'Đơn hàng đã được tạo', orderId });
     } catch (err) {
       await transaction.rollback();
+      console.error('[POST /api/orders] Transaction rolled back due to error:', err.message, err.stack);
       throw err;
     }
   } catch (err) {
-    console.error('Error creating order:', err);
+    console.error('[POST /api/orders] Error creating order:', {
+      message: err.message,
+      stack: err.stack,
+      requestBody: req.body,
+      userId: userId,
+    });
     res.status(500).json({ success: false, message: `Lỗi server khi tạo đơn hàng: ${err.message}` });
   }
 });
@@ -3162,7 +3772,184 @@ app.delete('/api/admin/orders/:id', authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi server khi xóa đơn hàng: ' + err.message });
   }
 });
+// API lấy danh sách mã giảm giá
+app.get('/api/admin/discount-codes', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.Role !== 'Admin') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập' });
+    }
 
+    const { search = '', page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const pool = await poolPromise;
+    const request = pool.request();
+
+    // Đếm tổng số mã giảm giá
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM DiscountCodes
+      WHERE Code LIKE @search
+    `;
+    request.input('search', sql.NVarChar, `%${search}%`);
+    const countResult = await request.query(countQuery);
+    const total = countResult.recordset[0].total;
+
+    // Lấy danh sách mã giảm giá
+    const query = `
+      SELECT *
+      FROM DiscountCodes
+      WHERE Code LIKE @search
+      ORDER BY DiscountCodeId ASC
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+    `;
+    request.input('offset', sql.Int, offset);
+    request.input('limit', sql.Int, parseInt(limit));
+    const result = await request.query(query);
+
+    res.json({
+      success: true,
+      discountCodes: result.recordset,
+      total,
+    });
+  } catch (err) {
+    console.error('API /api/admin/discount-codes - Error:', err);
+    res.status(500).json({ success: false, message: 'Lỗi server khi lấy danh sách mã giảm giá', error: err.message });
+  }
+});
+
+// API thêm mã giảm giá mới
+app.post('/api/admin/discount-codes', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.Role !== 'Admin') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập' });
+    }
+
+    const { Code, DiscountPercentage, ExpiryDate } = req.body;
+
+    if (!Code || !DiscountPercentage) {
+      return res.status(400).json({ success: false, message: 'Mã giảm giá và phần trăm giảm giá là bắt buộc' });
+    }
+
+    const pool = await poolPromise;
+    const request = pool.request();
+
+    // Kiểm tra trùng lặp mã
+    const checkDuplicate = await request
+      .input('Code', sql.NVarChar, Code)
+      .query(`SELECT COUNT(*) as count FROM DiscountCodes WHERE Code = @Code`);
+    if (checkDuplicate.recordset[0].count > 0) {
+      return res.status(400).json({ success: false, message: 'Mã giảm giá đã tồn tại' });
+    }
+
+    const result = await request
+      .input('Code', sql.NVarChar, Code)
+      .input('DiscountPercentage', sql.Decimal(5, 2), DiscountPercentage)
+      .input('ExpiryDate', sql.DateTime, ExpiryDate || null)
+      .query(`
+        INSERT INTO DiscountCodes (Code, DiscountPercentage, ExpiryDate)
+        OUTPUT INSERTED.DiscountCodeId
+        VALUES (@Code, @DiscountPercentage, @ExpiryDate)
+      `);
+
+    res.json({ success: true, message: 'Thêm mã giảm giá thành công', discountCodeId: result.recordset[0].DiscountCodeId });
+  } catch (err) {
+    console.error('API /api/admin/discount-codes - Error:', err);
+    res.status(500).json({ success: false, message: 'Lỗi server khi thêm mã giảm giá', error: err.message });
+  }
+});
+
+// API sửa mã giảm giá
+app.put('/api/admin/discount-codes/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.Role !== 'Admin') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập' });
+    }
+
+    const { id } = req.params;
+    const { Code, DiscountPercentage, ExpiryDate, IsActive } = req.body;
+
+    if (!Code || !DiscountPercentage) {
+      return res.status(400).json({ success: false, message: 'Mã giảm giá và phần trăm giảm giá là bắt buộc' });
+    }
+
+    const pool = await poolPromise;
+    const transaction = new sql.Transaction(pool);
+
+    try {
+      await transaction.begin();
+
+      const request = new sql.Request(transaction);
+
+      // Kiểm tra trùng lặp mã (trừ chính mã đang sửa)
+      const checkDuplicate = await request
+        .input('Code', sql.NVarChar, Code)
+        .input('DiscountCodeId', sql.Int, id)
+        .query(`SELECT COUNT(*) as count FROM DiscountCodes WHERE Code = @Code AND DiscountCodeId != @DiscountCodeId`);
+      if (checkDuplicate.recordset[0].count > 0) {
+        throw new Error('Mã giảm giá đã tồn tại');
+      }
+
+      await request
+        .input('DiscountCodeId', sql.Int, id)
+        .input('Code', sql.NVarChar, Code)
+        .input('DiscountPercentage', sql.Decimal(5, 2), DiscountPercentage)
+        .input('ExpiryDate', sql.DateTime, ExpiryDate || null)
+        .input('IsActive', sql.Bit, IsActive !== undefined ? IsActive : 1)
+        .query(`
+          UPDATE DiscountCodes
+          SET Code = @Code, DiscountPercentage = @DiscountPercentage, ExpiryDate = @ExpiryDate, IsActive = @IsActive, CreatedAt = GETDATE()
+          WHERE DiscountCodeId = @DiscountCodeId
+        `);
+
+      await transaction.commit();
+      res.json({ success: true, message: 'Cập nhật mã giảm giá thành công' });
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  } catch (err) {
+    console.error('API /api/admin/discount-codes/:id - Error:', err);
+    res.status(500).json({ success: false, message: 'Lỗi server khi cập nhật mã giảm giá', error: err.message });
+  }
+});
+
+// API xóa mã giảm giá
+app.delete('/api/admin/discount-codes/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.Role !== 'Admin') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập' });
+    }
+
+    const { id } = req.params;
+
+    const pool = await poolPromise;
+    const transaction = new sql.Transaction(pool);
+
+    try {
+      await transaction.begin();
+
+      const request = new sql.Request(transaction);
+
+      const deleteResult = await request
+        .input('DiscountCodeId', sql.Int, id)
+        .query('DELETE FROM DiscountCodes WHERE DiscountCodeId = @DiscountCodeId');
+
+      if (deleteResult.rowsAffected[0] === 0) {
+        throw new Error('Mã giảm giá không tồn tại');
+      }
+
+      await transaction.commit();
+      res.json({ success: true, message: 'Xóa mã giảm giá thành công' });
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  } catch (err) {
+    console.error('API /api/admin/discount-codes/:id - Error:', err);
+    res.status(500).json({ success: false, message: 'Lỗi server khi xóa mã giảm giá', error: err.message });
+  }
+});
 
 //API danh sách người dùng
 app.get('/api/admin/users', authenticateToken, async (req, res) => {
@@ -3561,5 +4348,161 @@ app.delete('/api/admin/users/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// API lấy dữ liệu thống kê cho Dashboard
+app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.Role !== 'Admin') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập' });
+    }
 
+    const pool = await poolPromise;
+    const request = pool.request();
+
+    // 1. Tổng doanh thu (tổng tiền từ các đơn hàng đã hoàn thành)
+    const revenueQuery = `
+      SELECT SUM(Total) as totalRevenue
+      FROM Orders
+      WHERE Status = 'Hoàn thành'
+    `;
+    const revenueResult = await request.query(revenueQuery);
+    const totalRevenue = revenueResult.recordset[0].totalRevenue || 0;
+
+    // 2. Số sản phẩm
+    const productsQuery = `
+      SELECT COUNT(*) as totalProducts
+      FROM Products
+    `;
+    const productsResult = await request.query(productsQuery);
+    const totalProducts = productsResult.recordset[0].totalProducts || 0;
+
+    // 3. Số đơn hàng
+    const ordersQuery = `
+      SELECT COUNT(*) as totalOrders
+      FROM Orders
+    `;
+    const ordersResult = await request.query(ordersQuery);
+    const totalOrders = ordersResult.recordset[0].totalOrders || 0;
+
+    // 4. Số khách hàng
+    const customersQuery = `
+      SELECT COUNT(*) as totalCustomers
+      FROM Users
+      WHERE Role = 'Customer'
+    `;
+    const customersResult = await request.query(customersQuery);
+    const totalCustomers = customersResult.recordset[0].totalCustomers || 0;
+
+    // 5. Doanh thu theo tháng (12 tháng gần nhất)
+    const salesByMonthQuery = `
+      SELECT 
+        MONTH(OrderDate) as month,
+        SUM(Total) as value
+      FROM Orders
+      WHERE OrderDate >= DATEADD(MONTH, -12, GETDATE())
+        AND Status = 'Hoàn thành'
+      GROUP BY MONTH(OrderDate)
+      ORDER BY MONTH(OrderDate)
+    `;
+    const salesByMonthResult = await request.query(salesByMonthQuery);
+    const salesData = Array.from({ length: 12 }, (_, i) => ({
+      name: `T${i + 1}`,
+      value: 0,
+    }));
+    salesByMonthResult.recordset.forEach((row) => {
+      salesData[row.month - 1].value = row.value || 0;
+    });
+
+    // 6. Phân loại sản phẩm (theo danh mục)
+    const productCategoryQuery = `
+      SELECT 
+        c.Name as name,
+        COUNT(p.ProductId) as value
+      FROM Categories c
+      LEFT JOIN Products p ON c.CategoryId = p.CategoryId
+      GROUP BY c.CategoryId, c.Name
+    `;
+    const productCategoryResult = await request.query(productCategoryQuery);
+    const productCategoryData = productCategoryResult.recordset;
+
+    // 7. Sản phẩm bán chạy (Top 5 sản phẩm có số lượng bán cao nhất)
+    const topProductsQuery = `
+      SELECT TOP 5
+        p.ProductId as id,
+        p.Name as name,
+        SUM(oi.Quantity) as sales,
+        p.Stock as stock
+      FROM Products p
+      JOIN OrderItems oi ON p.ProductId = oi.ProductId
+      JOIN Orders o ON oi.OrderId = o.OrderId
+      WHERE o.Status = 'Hoàn thành'
+      GROUP BY p.ProductId, p.Name, p.Stock
+      ORDER BY SUM(oi.Quantity) DESC
+    `;
+    const topProductsResult = await request.query(topProductsQuery);
+    const topProducts = topProductsResult.recordset;
+
+    // 8. So sánh doanh thu với tháng trước
+    const revenueComparisonQuery = `
+      SELECT 
+        SUM(CASE WHEN MONTH(OrderDate) = MONTH(GETDATE()) AND YEAR(OrderDate) = YEAR(GETDATE()) THEN Total ELSE 0 END) as currentMonth,
+        SUM(CASE WHEN MONTH(OrderDate) = MONTH(DATEADD(MONTH, -1, GETDATE())) AND YEAR(OrderDate) = YEAR(DATEADD(MONTH, -1, GETDATE())) THEN Total ELSE 0 END) as lastMonth
+      FROM Orders
+      WHERE Status = 'Hoàn thành'
+    `;
+    const revenueComparisonResult = await request.query(revenueComparisonQuery);
+    const { currentMonth, lastMonth } = revenueComparisonResult.recordset[0];
+    const revenueChange = lastMonth > 0 ? ((currentMonth - lastMonth) / lastMonth) * 100 : 0;
+
+    // 9. Số sản phẩm mới (thêm trong tháng này)
+    const newProductsQuery = `
+      SELECT COUNT(*) as newProducts
+      FROM Products
+      WHERE MONTH(CreatedAt) = MONTH(GETDATE()) AND YEAR(CreatedAt) = YEAR(GETDATE())
+    `;
+    const newProductsResult = await request.query(newProductsQuery);
+    const newProducts = newProductsResult.recordset[0].newProducts || 0;
+
+    // 10. So sánh số đơn hàng với tháng trước
+    const ordersComparisonQuery = `
+      SELECT 
+        COUNT(CASE WHEN MONTH(OrderDate) = MONTH(GETDATE()) AND YEAR(OrderDate) = YEAR(GETDATE()) THEN 1 END) as currentMonth,
+        COUNT(CASE WHEN MONTH(OrderDate) = MONTH(DATEADD(MONTH, -1, GETDATE())) AND YEAR(OrderDate) = YEAR(DATEADD(MONTH, -1, GETDATE())) THEN 1 END) as lastMonth
+      FROM Orders
+    `;
+    const ordersComparisonResult = await request.query(ordersComparisonQuery);
+    const { currentMonth: currentOrders, lastMonth: lastOrders } = ordersComparisonResult.recordset[0];
+    const ordersChange = lastOrders > 0 ? ((currentOrders - lastOrders) / lastOrders) * 100 : 0;
+
+    // 11. Số khách hàng mới (thêm trong tháng này)
+    const newCustomersQuery = `
+      SELECT COUNT(*) as newCustomers
+      FROM Users
+      WHERE Role = 'Customer'
+        AND MONTH(CreatedAt) = MONTH(GETDATE())
+        AND YEAR(CreatedAt) = YEAR(GETDATE())
+    `;
+    const newCustomersResult = await request.query(newCustomersQuery);
+    const newCustomers = newCustomersResult.recordset[0].newCustomers || 0;
+
+    res.json({
+      success: true,
+      data: {
+        totalRevenue,
+        totalProducts,
+        totalOrders,
+        totalCustomers,
+        salesData,
+        productCategoryData,
+        topProducts,
+        revenueChange,
+        newProducts,
+        ordersChange,
+        newCustomers,
+      },
+    });
+  } catch (err) {
+    console.error('API /api/admin/dashboard - Error:', err);
+    res.status(500).json({ success: false, message: 'Lỗi server khi lấy dữ liệu thống kê', error: err.message });
+  }
+});
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

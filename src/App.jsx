@@ -32,6 +32,7 @@ import OrderHistoryPage from './routes/OrderHistoryPage';
 import Footer from './components/Footer';
 import CheckoutPage from './routes/CheckoutPage';
 import OrderDetailPage from './routes/OrderDetailPage';
+import WishlistPage from './routes/WishListPage';
 //Admin Page
 import AdminUsers from './routes/admin/AdminUsers';
 import Categories from './routes/admin/Categories';
@@ -44,6 +45,7 @@ import NotFound from './routes/admin/NotFound';
 import Statistic from './routes/admin/Statistic';
 import ProductDetail from './routes/admin/ProductDetail';
 import Brand from './routes/admin/Brands';
+import DiscountCodes from './routes/admin/DiscountCodes';
 // // Bảo vệ route cho người dùng đã đăng nhập
 // const ProtectedRoute = ({ children }) => {
 //   const { user } = React.useContext(UserContext);
@@ -119,9 +121,10 @@ const App = () => {
       <TawkToWidget />
 
       <Routes>
-        <Route path="/" element={<Navigate to="/home"/>}/>
+      <Route path="/" element={<RedirectAfterLogin />} />
           {/* Layout dành cho User */}
           <Route element={<UserLayout />}>
+          <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
               <Route path="/home" element={<HomePage />} />
               <Route path="/product" element={<ProductPage />} />
               <Route path="/sale" element={<SalePage />} />
@@ -137,6 +140,7 @@ const App = () => {
               <Route path="/user-profile" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
               <Route path="/order-history" element={<ProtectedRoute><OrderHistoryPage /></ProtectedRoute>} />
               <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
+              <Route path="/wishlist" element={<ProtectedRoute><WishlistPage /></ProtectedRoute>} />
             </Route>
 
          {/* Layout dành cho Admin */}
@@ -159,6 +163,7 @@ const App = () => {
           <Route path="statistic" element={<Statistic />} />
           <Route path="brands" element={<Brand />} />
           <Route path="products/:id" element={<ProductDetail />} />
+          <Route path="discount-codes" element={<DiscountCodes />} />
         </Route>
         <Route path="*" element={<NotFound />} />
         </Routes>

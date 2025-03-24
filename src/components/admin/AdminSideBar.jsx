@@ -9,7 +9,9 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  LogOut
+  LogOut,
+  Tag, // Icon cho Brands
+  Percent // Icon cho Discount Codes
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
@@ -101,7 +103,8 @@ const AdminSidebar = () => {
     { to: "/admin/dashboard", icon: LayoutDashboard, label: "Thống kê" },
     { to: "/admin/products", icon: Smartphone, label: "Sản phẩm" },
     { to: "/admin/categories", icon: Layers, label: "Loại SP" },
-    { to: "/admin/brands", icon: Layers, label: "Thương hiệu" },
+    { to: "/admin/brands", icon: Tag, label: "Thương hiệu" }, // Thêm icon Tag cho Brands
+    { to: "/admin/discount-codes", icon: Percent, label: "Mã giảm giá" }, // Thêm icon Percent cho Discount Codes
     { to: "/admin/orders", icon: ShoppingCart, label: "Đơn hàng", badge: pendingOrders },
     { to: "/admin/users", icon: Users, label: "Người dùng" },
     { to: "/admin/settings", icon: Settings, label: "Cài đặt" },
