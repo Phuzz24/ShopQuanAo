@@ -34,15 +34,15 @@ const AdModal = () => {
           </button>
 
           <img
-            src="https://via.placeholder.com/400x300" // Thay thế với ảnh quảng cáo của bạn
+            src="https://img3.thuthuatphanmem.vn/uploads/2019/10/08/banner-quang-cao-dien-thoai-dep_103211368.jpg" // Thay thế với ảnh quảng cáo của bạn
             alt="Quảng cáo"
             className="w-full h-auto rounded-lg"
           />
           <h3 className="text-2xl font-semibold text-gray-800 my-4">
-            Mừng Ngày Quốc Tế Phụ Nữ 8/3
+            Mừng Ngày Lễ Black Friday
           </h3>
           <p className="text-gray-600 mb-4">
-            Mua 1 Tặng 5 sản phẩm chăm sóc sắc đẹp tại cửa hàng chúng tôi.
+            Giảm mạnh 50%.
           </p>
           <button
             onClick={handleCloseAd}

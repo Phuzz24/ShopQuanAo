@@ -1,14 +1,31 @@
 import React from 'react';
 import { FaTrashAlt, FaShoppingCart } from 'react-icons/fa';
 import { useCart } from '../context/CartContext';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useUser } from '../context/UserContext';
+import { toast } from 'react-toastify';
 
 const CartSlidebar = ({ showCart, toggleCart }) => {
   const { cart, removeFromCart, updateQuantity } = useCart();
+  const { token } = useUser();
+  const navigate = useNavigate();
 
-  // Tính tổng giá trị của các sản phẩm trong giỏ hàng
   const calculateTotal = () => {
-    return cart.reduce((total, product) => total + product.price * product.quantity, 0);
+    return cart.reduce((total, product) => {
+      const price = product.discountedPrice !== undefined && product.discountedPrice !== null
+        ? product.discountedPrice
+        : product.price || 0;
+      return total + price * product.quantity;
+    }, 0);
+  };
+
+  const handleCheckout = () => {
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để thanh toán!', { autoClose: 2000 });
+      navigate('/login');
+      return;
+    }
+    navigate('/checkout');
   };
 
   return (
@@ -18,7 +35,7 @@ const CartSlidebar = ({ showCart, toggleCart }) => {
       } flex flex-col`}
     >
       <button onClick={toggleCart} className="absolute top-4 right-4 text-2xl text-gray-600">
-        &times;
+        ×
       </button>
 
       <h2 className="text-2xl font-semibold mb-4">Giỏ Hàng</h2>
@@ -41,15 +58,37 @@ const CartSlidebar = ({ showCart, toggleCart }) => {
                 <div>
                   <p className="font-medium">{product.name}</p>
                   <p className="text-sm text-gray-600">{product.category}</p>
+                  <p className="text-sm text-gray-700">
+                    {product.discountedPrice !== undefined && product.discountedPrice !== null ? (
+                      <>
+                        {(product.discountedPrice).toLocaleString('vi-VN')} VND
+                        <span className="line-through text-gray-500 ml-2">
+                          {(product.price || 0).toLocaleString('vi-VN')} VND
+                        </span>
+                        {product.appliedDiscountCode && (
+                          <span className="text-green-600 text-xs ml-2">({product.appliedDiscountCode})</span>
+                        )}
+                      </>
+                    ) : (
+                      `${(product.price || 0).toLocaleString('vi-VN')} VND`
+                    )}
+                  </p>
                 </div>
               </div>
 
               <div className="flex items-center space-x-2">
-                <button onClick={() => updateQuantity(product.id, product.quantity - 1)} className="text-xl">
+                <button
+                  onClick={() => updateQuantity(product.id, product.quantity - 1)}
+                  className="text-xl"
+                  disabled={product.quantity <= 1}
+                >
                   -
                 </button>
                 <span>{product.quantity}</span>
-                <button onClick={() => updateQuantity(product.id, product.quantity + 1)} className="text-xl">
+                <button
+                  onClick={() => updateQuantity(product.id, product.quantity + 1)}
+                  className="text-xl"
+                >
                   +
                 </button>
                 <button
@@ -66,17 +105,16 @@ const CartSlidebar = ({ showCart, toggleCart }) => {
           <div className="mt-6 border-t pt-4">
             <div className="flex justify-between items-center">
               <p className="font-semibold">Tổng tiền</p>
-              <p className="text-xl font-bold text-red-600">{calculateTotal().toLocaleString()} VND</p>
+              <p className="text-xl font-bold text-red-600">{calculateTotal().toLocaleString('vi-VN')} VND</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Các nút thanh toán và xem chi tiết giỏ hàng nằm ở dưới cùng */}
       {cart.length > 0 && (
         <div className="mt-auto space-y-4">
           <button
-            onClick={() => {}}
+            onClick={handleCheckout}
             className="w-full py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-300"
           >
             Thanh Toán

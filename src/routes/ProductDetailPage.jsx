@@ -1,286 +1,455 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { FaShoppingCart, FaStar, FaInfoCircle, FaSmile } from 'react-icons/fa';
-import { motion } from 'framer-motion';
+  import React, { useState, useEffect } from 'react';
+  import { useParams, useNavigate } from 'react-router-dom';
+  import { FaShoppingCart, FaStar, FaInfoCircle, FaArrowLeft, FaSpinner, FaTag } from 'react-icons/fa';
+  import { motion, AnimatePresence } from 'framer-motion';
+  import { useCart } from '../context/CartContext';
+  import { useUser } from '../context/UserContext';
+  import { toast } from 'react-toastify';
 
-const ProductDetailPage = () => {
-  const { id } = useParams(); // Lấy ID sản phẩm từ URL
-  const navigate = useNavigate(); // Dùng để điều hướng
+  const ProductDetailPage = () => {
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const { addToCart } = useCart();
+    const { token } = useUser();
 
-  const [product, setProduct] = useState(null); // Dữ liệu sản phẩm
-  const [selectedRating, setSelectedRating] = useState(null); // Đánh giá sao
-  const [newComment, setNewComment] = useState(''); // Bình luận mới của khách hàng
-  const [reviews, setReviews] = useState([ // Các bình luận mặc định
-    { user: 'John Doe', rating: 5, comment: 'Excellent phone, highly recommend!' },
-    { user: 'Jane Smith', rating: 4, comment: 'Great performance but a bit pricey.' },
-  ]);
-  const [quantity, setQuantity] = useState(1); // Số lượng sản phẩm
-  const [currentImage, setCurrentImage] = useState(0); // Hiển thị ảnh sản phẩm hiện tại
-  const [activeTab, setActiveTab] = useState('details'); // Tab hiện tại
-  const [discountCode, setDiscountCode] = useState(''); // Mã giảm giá
-  const [discountMessage, setDiscountMessage] = useState(''); // Thông báo mã giảm giá
+    const [product, setProduct] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [selectedRating, setSelectedRating] = useState(null);
+    const [newComment, setNewComment] = useState('');
+    const [reviews, setReviews] = useState([]);
+    const [quantity, setQuantity] = useState(1);
+    const [currentImage, setCurrentImage] = useState(0);
+    const [activeTab, setActiveTab] = useState('details');
+    const [discountCode, setDiscountCode] = useState('');
+    const [discountMessage, setDiscountMessage] = useState('');
+    const [discountPercentage, setDiscountPercentage] = useState(0);
 
-  useEffect(() => {
-    // Mô phỏng lấy dữ liệu sản phẩm từ API
-    setProduct({
-      id: 1,
-      name: 'iPhone 14 Pro',
-      brand: 'Apple',
-      category: 'Smartphone',
-      price: 999,
-      description: 'The latest iPhone 14 Pro with amazing features and design.',
-      specs: [
-        '6.1-inch Super Retina XDR display',
-        'A15 Bionic chip',
-        'Pro camera system with 48MP lens',
-        '5G capable',
-        'Face ID',
-      ],
-      images: [
-        'https://example.com/iphone-14.jpg',
-        'https://example.com/iphone-14-2.jpg',
-        'https://example.com/iphone-14-3.jpg',
-      ],
-      promo: 'Giảm 10% cho đơn hàng đầu tiên!',
-      detailedSpecs: [
-        'Dung lượng bộ nhớ: 128GB',
-        'Màu sắc: Đen, Trắng, Vàng',
-        'Kích thước màn hình: 6.1 inch',
-        'Hệ điều hành: iOS 15',
-      ],
-    });
-  }, []); // Chạy một lần khi component được render
+    useEffect(() => {
+      const fetchProduct = async () => {
+        try {
+          setIsLoading(true);
+          const response = await fetch(`http://localhost:5000/api/products/${id}`);
+          if (!response.ok) throw new Error('Không thể tải thông tin sản phẩm');
+          const data = await response.json();
+          if (!data.success) throw new Error(data.message || 'Không thể tải thông tin sản phẩm');
 
-  // Nếu chưa có dữ liệu sản phẩm
-  if (!product) {
-    return <div>Loading...</div>; // Nếu product chưa có dữ liệu, hiển thị loading
-  }
+          const detailedSpecs = data.product.DetailedSpecs
+            ? data.product.DetailedSpecs.split(';').filter(spec => spec.trim())
+            : [];
 
-  // Hàm xử lý mã giảm giá
-  const handleApplyDiscount = () => {
-    if (discountCode === 'SALE10') {
-      setDiscountMessage('Mã giảm giá đã được áp dụng. Bạn nhận được 10% giảm giá!');
-    } else {
-      setDiscountMessage('Mã giảm giá không hợp lệ. Vui lòng thử lại.');
+          setProduct({
+            ...data.product,
+            id: parseInt(data.product.ProductId, 10),
+            detailedSpecs,
+            images: data.product.images || ['https://via.placeholder.com/500?text=No+Image'],
+          });
+        } catch (error) {
+          console.error('Error fetching product:', error);
+          toast.error(error.message, { autoClose: 2000 });
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchProduct();
+    }, [id]);
+
+    const handleApplyDiscount = async () => {
+      if (!discountCode.trim()) {
+        toast.error('Vui lòng nhập mã giảm giá!', { autoClose: 2000 });
+        return;
+      }
+
+      try {
+        const response = await fetch('http://localhost:5000/api/discount/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: discountCode }),
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || 'Mã giảm giá không hợp lệ!');
+        }
+
+        setDiscountPercentage(data.discountPercentage);
+        setDiscountMessage(data.message);
+        toast.success(data.message, { autoClose: 2000 });
+      } catch (error) {
+        setDiscountPercentage(0);
+        setDiscountMessage(error.message);
+        toast.error(error.message, { autoClose: 2000 });
+      }
+    };
+
+    const getDiscountedPrice = () => {
+      if (!product) return 0;
+      const basePrice = product.DiscountedPrice || product.Price;
+      const discount = discountPercentage / 100;
+      return basePrice * (1 - discount);
+    };
+
+    const handleAddToCart = () => {
+      if (quantity < 1) {
+        toast.error('Số lượng phải lớn hơn 0!', { autoClose: 2000 });
+        return;
+      }
+      if (product.Stock === 0) {
+        toast.error('Sản phẩm hiện đã hết hàng!', { autoClose: 2000 });
+        return;
+      }
+
+      const productToAdd = {
+        id: parseInt(product.id, 10),
+        Name: product.Name,
+        price: product.Price,
+        discountedPrice: getDiscountedPrice(),
+        image: product.images[0],
+        quantity,
+        appliedDiscountCode: discountCode,
+      };
+      console.log('Product before adding to cart:', productToAdd);
+      addToCart(productToAdd);
+    };
+
+    const handleBuyNow = () => {
+      if (quantity < 1) {
+        toast.error('Số lượng phải lớn hơn 0!', { autoClose: 2000 });
+        return;
+      }
+      if (product.Stock === 0) {
+        toast.error('Sản phẩm hiện đã hết hàng!', { autoClose: 2000 });
+        return;
+      }
+      if (!token) {
+        toast.error('Vui lòng đăng nhập để tiếp tục!', { autoClose: 2000 });
+        navigate('/login');
+        return;
+      }
+
+      const productToAdd = {
+        id: parseInt(product.id, 10),
+        Name: product.Name,
+        price: product.Price,
+        discountedPrice: getDiscountedPrice(),
+        image: product.images[0],
+        quantity,
+        appliedDiscountCode: discountCode,
+      };
+      addToCart(productToAdd);
+      navigate('/cart'); // Chuyển hướng đến trang giỏ hàng
+    };
+
+    const handleAddComment = () => {
+      if (!newComment.trim()) {
+        toast.error('Vui lòng nhập bình luận!', { autoClose: 2000 });
+        return;
+      }
+      const newReview = { user: 'Bạn', rating: selectedRating || 3, comment: newComment };
+      setReviews([newReview, ...reviews]);
+      setNewComment('');
+      setSelectedRating(null);
+      toast.success('Bình luận đã được gửi!', { autoClose: 2000 });
+    };
+
+    if (isLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-gray-100">
+          <FaSpinner className="animate-spin text-4xl text-indigo-600" />
+        </div>
+      );
     }
-  };
 
-  const handleAddToCart = () => {
-    console.log(`Added ${quantity} ${product.name} to the cart`);
-  };
+    if (!product) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-gray-100">
+          <p className="text-xl text-gray-600">Không tìm thấy sản phẩm</p>
+        </div>
+      );
+    }
 
-  const handleBuyNow = () => {
-    console.log(`Buying ${quantity} ${product.name} now`);
-    navigate('/checkout');
-  };
+    const isOnSale = product.DiscountPercentage > 0;
 
-  const handleImageClick = (index) => {
-    setCurrentImage(index); // Cập nhật ảnh chính khi nhấn vào ảnh nhỏ
-  };
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-gray-100 py-12">
+        <div className="container mx-auto p-6 md:p-8">
+          <motion.button
+            onClick={() => navigate(-1)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mb-6 flex items-center space-x-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition duration-300"
+          >
+            <FaArrowLeft />
+            <span>Quay lại</span>
+          </motion.button>
 
-  const handleAddComment = () => {
-    const newReview = { user: 'New User', rating: 3, comment: newComment }; // Tạo một bình luận mới
-    setReviews([newReview, ...reviews]); // Thêm vào đầu danh sách bình luận
-    setNewComment(''); // Làm rỗng trường nhập bình luận
-  };
-
-  return (
-    <div className="container mx-auto p-8">
-      {/* Nút quay lại */}
-      <button
-        onClick={() => navigate(-1)}
-        className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition duration-300 mb-6"
-      >
-        Quay lại
-      </button>
-
-      
-
-      <div className="flex flex-col md:flex-row gap-10">
-        {/* Hình ảnh sản phẩm */}
-        <motion.div
-          className="md:w-1/2 mb-6 md:mb-0"
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1, transition: { duration: 0.5 } }}
-        >
-          <img
-            src={product.images[currentImage]}
-            alt={product.name}
-            className="w-full h-[500px] object-cover rounded-xl shadow-lg"
-          />
-          <div className="flex justify-center mt-4">
-            <button onClick={() => setCurrentImage(currentImage === 0 ? product.images.length - 1 : currentImage - 1)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300">
-              &#60;
-            </button>
-            <button onClick={() => setCurrentImage(currentImage === product.images.length - 1 ? 0 : currentImage + 1)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300 ml-2">
-              &#62;
-            </button>
-          </div>
-
-          {/* Ảnh nhỏ phía dưới */}
-          <div className="flex justify-center mt-4 space-x-4">
-            {product.images.map((image, index) => (
-              <img
-                key={index}
-                src={image}
-                alt={`thumbnail-${index}`}
-                className="w-16 h-16 object-cover rounded-md cursor-pointer border-2 border-transparent hover:border-blue-500"
-                onClick={() => handleImageClick(index)}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="flex flex-col md:flex-row gap-8"
+          >
+            <div className="md:w-1/2">
+              <motion.img
+                key={currentImage}
+                src={product.images[currentImage]}
+                alt={product.Name}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5 }}
+                className="w-full h-[400px] md:h-[500px] object-cover rounded-xl shadow-lg"
               />
-            ))}
-          </div>
-        </motion.div>
-
-        {/* Thông tin chi tiết sản phẩm */}
-        <div className="md:w-1/2">
-  {/* Tên sản phẩm và giá */}
-  <div className="mb-6">
-    <h2 className="text-4xl font-semibold text-gray-800">{product.name}</h2>
-    <p className="text-3xl font-bold text-blue-600">{product.price} VND</p>
-  </div>
-
-  {/* Mô tả ngắn về sản phẩm */}
-  <p className="text-lg text-gray-600 mb-6">{product.description}</p>
-
-  {/* Thông tin khuyến mãi */}
-  <div className="bg-yellow-100 p-4 rounded-lg mb-6">
-    <p className="text-xl font-semibold text-yellow-700">Ưu đãi đặc biệt:</p>
-    <p className="text-gray-700 mt-2">Giảm 10% cho đơn hàng đầu tiên với mã "SALE10". Hãy nhanh tay nhận ngay ưu đãi!</p>
-  </div>
-
-  {/* Nhập mã giảm giá */}
-  <div className="mb-6">
-    <label htmlFor="discount" className="block text-lg font-semibold">Nhập mã giảm giá:</label>
-    <input
-      type="text"
-      id="discount"
-      value={discountCode}
-      onChange={(e) => setDiscountCode(e.target.value)}
-      className="w-full p-3 border border-gray-300 rounded-lg text-lg mb-3"
-      placeholder="Mã giảm giá"
-    />
-    <button
-      onClick={handleApplyDiscount}
-      className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-300"
-    >
-      Áp dụng
-    </button>
-    {discountMessage && (
-      <p className={`mt-3 ${discountCode === 'SALE10' ? 'text-green-600' : 'text-red-600'}`}>{discountMessage}</p>
-    )}
-  </div>
-
-  {/* Các nút chức năng */}
-  <div className="flex gap-4 mb-6">
-    <button
-      onClick={handleAddToCart}
-      className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300 flex items-center justify-center gap-2"
-    >
-      <FaShoppingCart /> Thêm vào Giỏ Hàng
-    </button>
-    <button
-      onClick={handleBuyNow}
-      className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-300 flex items-center justify-center gap-2"
-    >
-      <FaShoppingCart /> Mua Ngay
-    </button>
-  </div>
-</div>
-
-      </div>
-
-      {/* Tách biệt các phần Thông số và Đánh giá */}
-      <div className="mt-12">
-        {/* Tab điều hướng */}
-        <div className="flex gap-4 mb-6">
-          <button
-            onClick={() => setActiveTab('details')}
-            className={`${
-              activeTab === 'details' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600'
-            } px-6 py-3 rounded-lg border-2 border-blue-600 flex items-center gap-2`}
-          >
-            <FaInfoCircle /> Thông Số Kỹ Thuật
-          </button>
-          <button
-            onClick={() => setActiveTab('reviews')}
-            className={`${
-              activeTab === 'reviews' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600'
-            } px-6 py-3 rounded-lg border-2 border-blue-600 flex items-center gap-2`}
-          >
-            <FaStar /> Đánh Giá
-          </button>
-        </div>
-
-        {/* Nội dung của các tab */}
-        {activeTab === 'details' && (
-          <div className="bg-gray-100 p-6 rounded-xl shadow-lg mb-6">
-            <h3 className="text-xl font-semibold text-gray-800 mb-4">Thông Số Kỹ Thuật:</h3>
-            <ul className="list-disc pl-6 space-y-2 text-gray-700">
-              {product.detailedSpecs.map((spec, index) => (
-                <li key={index}>{spec}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {activeTab === 'reviews' && (
-          <div className="space-y-6">
-            {reviews.map((review, index) => (
-              <div key={index} className="flex items-start gap-4 bg-gray-100 p-4 rounded-lg shadow-md">
-                <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
-                  {review.user[0]}
-                </div>
-                <div>
-                  <p className="text-lg font-medium text-gray-800">{review.user}</p>
-                  <p className="text-sm text-yellow-500">Rating: {review.rating} stars</p>
-                  <p className="text-gray-700 mt-2">{review.comment}</p>
-                </div>
+              <div className="flex justify-center mt-4 gap-4">
+                {product.images.map((image, index) => (
+                  <motion.img
+                    key={index}
+                    src={image}
+                    alt={`thumbnail-${index}`}
+                    whileHover={{ scale: 1.1 }}
+                    className={`w-16 h-16 object-cover rounded-md cursor-pointer border-2 ${currentImage === index ? 'border-indigo-500' : 'border-transparent'}`}
+                    onClick={() => setCurrentImage(index)}
+                  />
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
 
-        {/* Nhập bình luận */}
-        {activeTab === 'reviews' && (
-          <textarea
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            placeholder="Viết bình luận của bạn..."
-            className="w-full p-4 border border-gray-300 rounded-lg mb-4 mt-4"
-          />
-        )}
-        {activeTab === 'reviews' && (
-          <button
-            onClick={handleAddComment}
-            className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300"
+            <div className="md:w-1/2 space-y-6">
+              <h2 className="text-3xl md:text-4xl font-bold text-gray-800">{product.Name}</h2>
+              <div>
+                {isOnSale ? (
+                  <div>
+                    <p className="text-xl text-gray-  line-through">
+                      {product.Price.toLocaleString('vi-VN')} ₫
+                    </p>
+                    <p className="text-2xl font-semibold text-indigo-600">
+                      {product.DiscountedPrice.toLocaleString('vi-VN')} ₫
+                      <span className="text-sm text-green-600 ml-2">(-{product.DiscountPercentage}%)</span>
+                    </p>
+                  </div>
+                ) : discountPercentage > 0 ? (
+                  <div>
+                    <p className="text-xl text-gray-500 line-through">
+                      {product.Price.toLocaleString('vi-VN')} ₫
+                    </p>
+                    <p className="text-2xl font-semibold text-indigo-600">
+                      {getDiscountedPrice().toLocaleString('vi-VN')} ₫
+                      <span className="text-sm text-green-600 ml-2">(-{discountPercentage}%)</span>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-2xl font-semibold text-indigo-600">
+                    {product.Price.toLocaleString('vi-VN')} ₫
+                  </p>
+                )}
+              </div>
+              <p className="text-lg text-gray-600">{product.Description}</p>
+              <p className="text-lg font-semibold text-gray-700">
+                Trạng thái: <span className={product.Stock > 0 ? 'text-green-600' : 'text-red-600'}>{product.Stock > 0 ? 'Còn hàng' : 'Hết hàng'}</span>
+              </p>
+
+              <div className="flex items-center space-x-4">
+                <label className="text-lg font-semibold text-gray-700">Số lượng:</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-20 p-2 border border-gray-300 rounded-lg text-center"
+                  disabled={product.Stock === 0}
+                />
+              </div>
+
+              {!isOnSale && (
+                <div className="bg-yellow-100 p-4 rounded-lg shadow-md">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <FaTag className="text-yellow-500" />
+                    <p className="text-lg font-semibold text-gray-800">
+                      Sử dụng mã giảm giá để tiết kiệm hơn!
+                    </p>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Nhập mã như <span className="font-bold">SALE10</span> hoặc{' '}
+                    <span className="font-bold">SUMMER20</span> để nhận ưu đãi lên đến 20%. Kiểm tra email hoặc trang khuyến mãi để lấy mã!
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      id="discount"
+                      value={discountCode}
+                      onChange={(e) => setDiscountCode(e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                      placeholder="Nhập mã giảm giá (VD: SALE10)"
+                    />
+                    <button
+                      onClick={handleApplyDiscount}
+                      className="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-300"
+                    >
+                      Áp dụng
+                    </button>
+                  </div>
+                  {discountMessage && (
+                    <p className={`mt-2 ${discountPercentage > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {discountMessage}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-4">
+                <motion.button
+                  onClick={handleAddToCart}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className={`w-full py-3 rounded-lg flex items-center justify-center gap-2 transition duration-300 ${
+                    product.Stock > 0
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                  }`}
+                  disabled={product.Stock === 0}
+                >
+                  <FaShoppingCart /> Thêm vào Giỏ Hàng
+                </motion.button>
+                <motion.button
+                  onClick={handleBuyNow}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className={`w-full py-3 rounded-lg flex items-center justify-center gap-2 transition duration-300 ${
+                    product.Stock > 0
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                  }`}
+                  disabled={product.Stock === 0}
+                >
+                  <FaShoppingCart /> Mua Ngay
+                </motion.button>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="mt-12"
           >
-            Gửi Bình Luận
-          </button>
-        )}
-      </div>
+            <div className="flex gap-4 mb-6">
+              {['details', 'reviews'].map((tab) => (
+                <motion.button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  whileHover={{ scale: 1.05 }}
+                  className={`px-6 py-3 rounded-lg border-2 border-indigo-600 flex items-center gap-2 ${
+                    activeTab === tab ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-600'
+                  }`}
+                >
+                  {tab === 'details' ? <FaInfoCircle /> : <FaStar />}
+                  {tab === 'details' ? 'Thông Số Kỹ Thuật' : 'Đánh Giá'}
+                </motion.button>
+              ))}
+            </div>
 
-      {/* Đánh giá sản phẩm */}
-      <div className="mt-12">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4 text-center">Đánh Giá Sản Phẩm</h2>
-        <div className="flex justify-center space-x-4">
-          {['Rất Tệ', 'Tệ', 'Tạm ổn', 'Tốt', 'Rất Tốt'].map((rating, index) => (
-            <button
-              key={index}
-              onClick={() => setSelectedRating(rating)}
-              className={`${
-                selectedRating === rating ? 'bg-yellow-500 text-white' : 'bg-transparent text-gray-700'
-              } px-6 py-3 border-2 border-yellow-500 rounded-lg flex items-center gap-2`}
-            >
-              <FaStar className="text-yellow-400" /> {rating}
-            </button>
-          ))}
+            <AnimatePresence mode="wait">
+              {activeTab === 'details' ? (
+                <motion.div
+                  key="details"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                  className="bg-white p-6 rounded-xl shadow-lg"
+                >
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">Thông Số Kỹ Thuật</h3>
+                  <ul className="list-disc pl-6 space-y-2 text-gray-700">
+                    {product.detailedSpecs.length > 0 ? (
+                      product.detailedSpecs.map((spec, index) => (
+                        <li key={index}>{spec}</li>
+                      ))
+                    ) : (
+                      <li>Không có thông số kỹ thuật</li>
+                    )}
+                  </ul>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="reviews"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                  className="space-y-6"
+                >
+                  {reviews.length > 0 ? (
+                    reviews.map((review, index) => (
+                      <motion.div
+                        key={index}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="bg-white p-4 rounded-lg shadow-md flex items-start gap-4"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">
+                          {review.user[0]}
+                        </div>
+                        <div>
+                          <p className="text-lg font-medium text-gray-800">{review.user}</p>
+                          <p className="text-sm text-yellow-500 flex items-center gap-1">
+                            {Array(review.rating).fill(<FaStar />)}
+                          </p>
+                          <p className="text-gray-700 mt-2">{review.comment}</p>
+                        </div>
+                      </motion.div>
+                    ))
+                  ) : (
+                    <p className="text-gray-600">Chưa có đánh giá nào cho sản phẩm này.</p>
+                  )}
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Viết bình luận của bạn..."
+                    className="w-full p-4 border border-gray-300 rounded-lg mt-4"
+                  />
+                  <motion.button
+                    onClick={handleAddComment}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition duration-300"
+                  >
+                    Gửi Bình Luận
+                  </motion.button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.4 }}
+            className="mt-12 text-center"
+          >
+            <h2 className="text-2xl font-semibold text-gray-800 mb-4">Đánh Giá Sản Phẩm</h2>
+            <div className="flex justify-center gap-4 flex-wrap">
+              {['Rất Tệ', 'Tệ', 'Tạm ổn', 'Tốt', 'Rất Tốt'].map((rating, index) => (
+                <motion.button
+                  key={index}
+                  onClick={() => setSelectedRating(index + 1)}
+                  whileHover={{ scale: 1.05 }}
+                  className={`px-4 py-2 border-2 border-yellow-500 rounded-lg flex items-center gap-2 ${
+                    selectedRating === index + 1 ? 'bg-yellow-500 text-white' : 'bg-transparent text-gray-700'
+                  }`}
+                >
+                  <FaStar className="text-yellow-400" /> {rating}
+                </motion.button>
+              ))}
+            </div>
+            {selectedRating && (
+              <p className="mt-4 text-lg text-gray-800">
+                Bạn đã đánh giá: <span className="font-bold text-yellow-500">{selectedRating} sao</span>
+              </p>
+            )}
+          </motion.div>
         </div>
-        {selectedRating && (
-          <p className="mt-4 text-lg text-gray-800 text-center">Bạn đã chọn đánh giá: <span className="font-bold text-yellow-500">{selectedRating}</span></p>
-        )}
       </div>
-    </div>
-  );
-};
+    );
+  };
 
-export default ProductDetailPage;
+  export default ProductDetailPage;

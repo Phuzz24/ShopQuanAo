@@ -4,7 +4,7 @@ import { Helmet } from "react-helmet";
 import { CartProvider } from './context/CartContext';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { UserProvider } from './context/UserContext'; // Import UserProvider
+import { UserProvider, useUser } from './context/UserContext'; // Import UserProvider và useUser
 import AdBanner from './components/AdBanner';
 
 // Import TawkToWidget component
@@ -30,7 +30,8 @@ import ProductDetailPage from './routes/ProductDetailPage';
 import UserProfilePage from './routes/UserProfilePage';
 import OrderHistoryPage from './routes/OrderHistoryPage';
 import Footer from './components/Footer';
-
+import CheckoutPage from './routes/CheckoutPage';
+import OrderDetailPage from './routes/OrderDetailPage';
 //Admin Page
 import AdminUsers from './routes/admin/AdminUsers';
 import Categories from './routes/admin/Categories';
@@ -41,11 +42,70 @@ import Settings from './routes/admin/Settings';
 import Dashboard from './components/admin/Dashboard'
 import NotFound from './routes/admin/NotFound';
 import Statistic from './routes/admin/Statistic';
+import ProductDetail from './routes/admin/ProductDetail';
+import Brand from './routes/admin/Brands';
+// // Bảo vệ route cho người dùng đã đăng nhập
+// const ProtectedRoute = ({ children }) => {
+//   const { user } = React.useContext(UserContext);
+//   return user ? children : <Navigate to="/login" />;
+// };
 
 //import logo
 import logo from './images/logo.png'
 import BackToTopButton from './components/BackToTopButton'; // Import nút Trở về đầu trang
 
+
+// Component bảo vệ route Admin
+const AdminRoute = ({ children }) => {
+  const { user } = useUser();
+  console.log('AdminRoute - Current user:', user);
+
+  if (!user) {
+    console.log('AdminRoute - No user, redirecting to /login');
+    return <Navigate to="/login" />;
+  }
+
+  if (user.Role !== 'Admin') {
+    console.log('AdminRoute - User is not Admin, redirecting to /home');
+    return <Navigate to="/home" />;
+  }
+
+  return children;
+};
+
+// Component bảo vệ route yêu cầu đăng nhập và chuyển hướng Admin
+const ProtectedRoute = ({ children }) => {
+  const { user } = useUser();
+  console.log('ProtectedRoute - Current user:', user);
+
+  if (!user) {
+    console.log('ProtectedRoute - No user, redirecting to /login');
+    return <Navigate to="/login" />;
+  }
+
+  // Nếu người dùng là Admin và đang truy cập route không phải /admin, chuyển hướng đến /admin
+  if (user.Role === 'Admin' && !window.location.pathname.startsWith('/admin')) {
+    console.log('ProtectedRoute - User is Admin, redirecting to /admin');
+    return <Navigate to="/admin" />;
+  }
+
+  return children;
+};
+
+// Component xử lý chuyển hướng sau khi đăng nhập
+const RedirectAfterLogin = () => {
+  const { user } = useUser();
+
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+
+  if (user.Role === 'Admin') {
+    return <Navigate to="/admin" />;
+  }
+
+  return <Navigate to="/home" />;
+};
 const App = () => {
   return (
     <UserProvider>
@@ -60,30 +120,34 @@ const App = () => {
 
       <Routes>
         <Route path="/" element={<Navigate to="/home"/>}/>
-
           {/* Layout dành cho User */}
-        <Route element={<UserLayout />}>
-          <Route path="/home" element={<HomePage/>} />
-          <Route path="/product" element={<ProductPage/>} />
-          <Route path="/sale" element={<SalePage/>} />
-          <Route path="/hot" element={<HotPage />} />
-          <Route path="/login" element={<LoginPage/>} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/news" element={<NewPage />} />
-          <Route path="/news/:id" element={<NewsDetailPage/>} />
-          <Route path="/cart" element={<CartDetailPage/>}/>
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/product-detail/:id" element={<ProductDetailPage />} />
-          <Route path="/user-profile/:id" element={<UserProfilePage />} />
-          <Route path="/order-history/:userId" element={<OrderHistoryPage />} />
-        
-          <Route path="*" element={<Footer />} />
-          <Route path="*" element={<AdBanner />} />
-
-        </Route>
+          <Route element={<UserLayout />}>
+              <Route path="/home" element={<HomePage />} />
+              <Route path="/product" element={<ProductPage />} />
+              <Route path="/sale" element={<SalePage />} />
+              <Route path="/hot" element={<HotPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/news" element={<NewPage />} />
+              <Route path="/news/:id" element={<NewsDetailPage />} />
+              <Route path="/cart" element={<ProtectedRoute><CartDetailPage /></ProtectedRoute>} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/product-detail/:id" element={<ProductDetailPage />} />
+              <Route path="/order/:orderId" element={<ProtectedRoute><OrderDetailPage /></ProtectedRoute>} />
+              <Route path="/user-profile" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
+              <Route path="/order-history" element={<ProtectedRoute><OrderHistoryPage /></ProtectedRoute>} />
+              <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
+            </Route>
 
          {/* Layout dành cho Admin */}
-        <Route path="/admin" element={<AdminLayout />}>
+         <Route
+              path="/admin"
+              element={
+                <AdminRoute>
+                  <AdminLayout />
+                </AdminRoute>
+              }
+            >
           <Route index element={<Dashboard />}/>
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="products" element={<Products />} />
@@ -93,12 +157,24 @@ const App = () => {
           <Route path="categories" element={<Categories />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="statistic" element={<Statistic />} />
+          <Route path="brands" element={<Brand />} />
+          <Route path="products/:id" element={<ProductDetail />} />
         </Route>
         <Route path="*" element={<NotFound />} />
         </Routes>
       <BackToTopButton />
-      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeButton rtl={false} pauseOnFocusLoss draggable pauseOnHover />
-
+      <ToastContainer
+            position="top-right"
+            autoClose={3000}
+            hideProgressBar={false}
+            newestOnTop
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+            theme="colored"
+          />
     </Router>
     </CartProvider>
     </UserProvider>
