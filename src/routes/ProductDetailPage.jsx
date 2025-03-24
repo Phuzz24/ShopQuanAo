@@ -323,6 +323,7 @@ const ProductDetailPage = () => {
       toast.error(error.message, { autoClose: 2000 });
     }
   };
+  
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
