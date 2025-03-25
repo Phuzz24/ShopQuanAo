@@ -15,27 +15,27 @@ export const CartProvider = ({ children }) => {
       console.log('No token or UserId, skipping fetchCartFromDB');
       return;
     }
-
+  
     try {
       const response = await fetch(`http://localhost:5000/api/cart?userId=${user.UserId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
       if (data.success) {
-        // Giữ lại discountedPrice và appliedDiscountCode từ cart hiện tại
         const updatedCart = data.cart.map((item) => {
-          const existingItem = cart.find((cartItem) => cartItem.id === item.ProductId);
+          const existingItem = cart.find((cartItem) => cartItem.id === item.id);
           return {
-            id: item.ProductId,
-            name: item.Name,
-            price: item.Price,
-            image: item.Image,
-            quantity: item.Quantity,
-            discountedPrice: existingItem?.discountedPrice || item.Price, // Giữ discountedPrice nếu có
-            appliedDiscountCode: existingItem?.appliedDiscountCode || '', // Giữ mã giảm giá nếu có
+            id: item.id,
+            name: item.name || 'Sản phẩm không xác định',
+            price: item.price || 0,
+            image: item.image || null,
+            quantity: item.quantity || 1,
+            discountedPrice: existingItem?.discountedPrice || item.discountedPrice || item.price,
+            appliedDiscountCode: existingItem?.appliedDiscountCode || '',
           };
         });
         setCart(updatedCart);
+        console.log('Updated cart after fetch:', updatedCart);
       } else {
         console.error('Fetch cart failed:', data.message);
       }
@@ -44,7 +44,6 @@ export const CartProvider = ({ children }) => {
       toast.error('Không thể tải giỏ hàng từ server!', { autoClose: 2000 });
     }
   };
-
   useEffect(() => {
     fetchCartFromDB();
   }, [token, user]);
@@ -118,17 +117,17 @@ export const CartProvider = ({ children }) => {
       toast.error('Không tìm thấy sản phẩm để xóa!', { autoClose: 2000 });
       return;
     }
-
+  
     const productName = product.name || product.Name || 'Sản phẩm không xác định';
     const prevCart = [...cart];
     setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
     toast.success(`${productName} đã được xóa khỏi giỏ hàng!`, { autoClose: 2000 });
-
+  
     if (token && user?.UserId) {
       try {
         const parsedUserId = parseInt(user.UserId, 10);
         if (isNaN(parsedUserId)) throw new Error('UserId không hợp lệ');
-
+  
         const response = await fetch('http://localhost:5000/api/cart/remove', {
           method: 'DELETE',
           headers: {
@@ -140,13 +139,16 @@ export const CartProvider = ({ children }) => {
             productId,
           }),
         });
-
+  
         const data = await response.json();
         console.log('Remove API response:', data);
         if (!data.success) {
           setCart(prevCart);
           toast.error(`Không thể xóa ${productName} khỏi giỏ hàng trên server: ${data.message}`, { autoClose: 2000 });
           await fetchCartFromDB();
+        } else {
+          // Đồng bộ giỏ hàng từ server sau khi xóa thành công
+          setCart(data.cart);
         }
       } catch (err) {
         setCart(prevCart);

@@ -15,7 +15,7 @@ const CartDetailPage = () => {
     if (token) {
       fetchCartFromDB(); // Đồng bộ giỏ hàng từ server
     }
-  }, [token, fetchCartFromDB]);
+  }, [token]); // Chỉ phụ thuộc vào `token`
 
   const calculateTotal = () => {
     return cart.reduce((total, product) => {
@@ -57,7 +57,7 @@ const CartDetailPage = () => {
           initial={{ opacity: 0, y: -30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="text-4xl font-extrabold text-center text-indigo-700 mb-10 tracking-tight"
+          className="text-4xl font-extrabold text-center text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600 mb-10 tracking-tight"
         >
           Giỏ Hàng Của Bạn
         </motion.h2>
@@ -67,13 +67,13 @@ const CartDetailPage = () => {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
-            className="flex flex-col items-center justify-center min-h-[50vh] bg-white rounded-2xl shadow-lg p-8"
+            className="flex flex-col items-center justify-center min-h-[50vh] bg-white rounded-2xl shadow-lg p-8 border border-gray-100"
           >
-            <FaShoppingCart className="text-6xl text-gray-300 mb-6" />
+            <FaShoppingCart className="text-6xl text-gray-300 mb-6 animate-bounce" />
             <p className="text-xl font-medium text-gray-600 mb-6">Giỏ hàng của bạn hiện tại trống!</p>
             <Link
               to="/product"
-              className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 shadow-md font-semibold"
+              className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 shadow-md hover:shadow-lg font-semibold"
             >
               Tiếp Tục Mua Sắm
             </Link>
@@ -89,36 +89,39 @@ const CartDetailPage = () => {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, x: -50 }}
                     transition={{ duration: 0.4 }}
-                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-6 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 border border-gray-200"
+                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-6 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 border border-gray-200 hover:border-indigo-200"
                   >
                     <div className="flex items-center space-x-6 w-full sm:w-auto">
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-lg shadow-sm"
-                      />
+                      <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-lg overflow-hidden shadow-sm">
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300 rounded-lg" />
+                      </div>
                       <div className="flex-1">
-                        <h3 className="text-xl font-semibold text-gray-800 mb-1">{product.name}</h3>
-                        <p className="text-sm text-gray-500">{product.category}</p>
+                        <h3 className="text-xl font-semibold text-gray-800 mb-1 hover:text-indigo-600 transition-colors duration-200">{product.name}</h3>
+                        <p className="text-sm text-gray-500">{product.category || 'Không xác định'}</p>
                         <p className="text-sm text-green-600 font-medium">{product.status || 'Còn hàng'}</p>
                         <p className="text-md font-bold text-indigo-600 mt-2">
-  {product.discountedPrice !== undefined && 
-   product.discountedPrice !== null && 
-   product.discountedPrice !== product.price && 
-   product.discountedPrice < product.price ? (
-    <>
-      {(product.discountedPrice * product.quantity).toLocaleString('vi-VN')} VND
-      <span className="line-through text-gray-500 text-sm ml-2">
-        {(product.price * product.quantity).toLocaleString('vi-VN')} VND
-      </span>
-      {product.appliedDiscountCode && (
-        <span className="text-green-600 text-xs ml-2">({product.appliedDiscountCode})</span>
-      )}
-    </>
-  ) : (
-    `${(product.price * product.quantity).toLocaleString('vi-VN')} VND`
-  )}
-</p>
+                          {product.discountedPrice !== undefined &&
+                          product.discountedPrice !== null &&
+                          product.discountedPrice !== product.price &&
+                          product.discountedPrice < product.price ? (
+                            <>
+                              {(product.discountedPrice * product.quantity).toLocaleString('vi-VN')} VND
+                              <span className="line-through text-gray-500 text-sm ml-2">
+                                {(product.price * product.quantity).toLocaleString('vi-VN')} VND
+                              </span>
+                              {product.appliedDiscountCode && (
+                                <span className="text-green-600 text-xs ml-2">({product.appliedDiscountCode})</span>
+                              )}
+                            </>
+                          ) : (
+                            `${(product.price * product.quantity).toLocaleString('vi-VN')} VND`
+                          )}
+                        </p>
                       </div>
                     </div>
 
@@ -127,21 +130,21 @@ const CartDetailPage = () => {
                         <button
                           onClick={() => updateQuantity(product.id, product.quantity - 1)}
                           disabled={product.quantity <= 1}
-                          className="w-10 h-10 flex items-center justify-center text-gray-700 hover:text-indigo-600 disabled:text-gray-400 transition duration-200"
+                          className="w-10 h-10 flex items-center justify-center text-gray-700 hover:text-indigo-600 hover:bg-indigo-50 disabled:text-gray-400 disabled:hover:bg-gray-100 transition-all duration-200 rounded-full"
                         >
                           -
                         </button>
-                        <span className="w-12 text-center text-lg font-medium">{product.quantity}</span>
+                        <span className="w-12 text-center text-lg font-medium text-gray-800">{product.quantity}</span>
                         <button
                           onClick={() => updateQuantity(product.id, product.quantity + 1)}
-                          className="w-10 h-10 flex items-center justify-center text-gray-700 hover:text-indigo-600 transition duration-200"
+                          className="w-10 h-10 flex items-center justify-center text-gray-700 hover:text-indigo-600 hover:bg-indigo-50 transition-all duration-200 rounded-full"
                         >
                           +
                         </button>
                       </div>
                       <button
                         onClick={() => handleRemove(product)}
-                        className="text-red-500 hover:text-red-700 transition duration-200"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-full transition-all duration-200"
                       >
                         <FaTrashAlt className="text-xl" />
                       </button>
@@ -155,15 +158,15 @@ const CartDetailPage = () => {
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6 }}
-              className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-md lg:sticky lg:top-8 border border-gray-200"
+              className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-md lg:sticky lg:top-8 border border-gray-200 hover:shadow-xl transition-all duration-300"
             >
-              <h3 className="text-2xl font-bold text-gray-800 mb-6">Tóm Tắt Đơn Hàng</h3>
+              <h3 className="text-2xl font-bold text-gray-800 mb-6 bg-gradient-to-r from-indigo-600 to-blue-600 text-transparent bg-clip-text">Tóm Tắt Đơn Hàng</h3>
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <p className="text-lg text-gray-600">Tạm tính:</p>
-                  <p className="text-lg font-medium text-gray-800">{calculateTotal().toLocaleString('vi-VN')} VND</p>
+                  <p className="text-lg text-gray-600 font-medium">Tạm tính:</p>
+                  <p className="text-lg font-semibold text-gray-800">{calculateTotal().toLocaleString('vi-VN')} VND</p>
                 </div>
-                <div className="flex justify-between items-center border-t pt-4">
+                <div className="flex justify-between items-center border-t border-gray-200 pt-4">
                   <p className="text-xl font-semibold text-gray-800">Tổng cộng:</p>
                   <p className="text-2xl font-bold text-indigo-600">{calculateTotal().toLocaleString('vi-VN')} VND</p>
                 </div>
@@ -171,7 +174,7 @@ const CartDetailPage = () => {
               <div className="mt-6 space-y-4">
                 <button
                   onClick={handleCheckout}
-                  className="w-full py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 font-semibold shadow-md"
+                  className="w-full py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 font-semibold shadow-md hover:shadow-lg"
                 >
                   Thanh Toán Ngay
                 </button>

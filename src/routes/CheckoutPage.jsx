@@ -34,64 +34,219 @@ const CheckoutPage = () => {
   const [orderId, setOrderId] = useState(null);
   const [checkoutItems, setCheckoutItems] = useState([]);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
-  const [zpTransToken, setZpTransToken] = useState(''); // Thêm state cho zp_trans_token
+  const [zpTransToken, setZpTransToken] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('pending');
-  const [appTransId, setAppTransId] = useState('');
+  const [transactionId, setTransactionId] = useState('');
   const [isPaymentProcessed, setIsPaymentProcessed] = useState(false);
   const [pendingOrder, setPendingOrder] = useState(null);
 
   const timeZone = 'Asia/Ho_Chi_Minh';
 
-  const checkPaymentStatus = async (appTransId) => {
+  const checkPaymentStatus = async (transactionId, retries = 3) => {
+    console.log('checkPaymentStatus - Starting with TransactionId:', transactionId, 'Retries left:', retries);
+    if (!transactionId) {
+      console.error('checkPaymentStatus - Missing TransactionId');
+      setPaymentStatus('failed');
+      setIsPaymentProcessed(true);
+      setOrderId(null);
+      toast.error('Không thể kiểm tra trạng thái thanh toán: Thiếu TransactionId', { autoClose: 2000 });
+      return true;
+    }
+  
     try {
-      console.log('Checking payment status for appTransId:', appTransId, 'Current paymentStatus:', paymentStatus, 'isPaymentProcessed:', isPaymentProcessed);
-
-      const response = await axios.post(
-        'http://localhost:5000/api/zalopay/check-status',
-        { app_trans_id: appTransId },
+      console.log('Checking payment status for TransactionId:', transactionId, 'Current paymentStatus:', paymentStatus, 'isPaymentProcessed:', isPaymentProcessed);
+  
+      const dbResponse = await axios.get(
+        `http://localhost:5000/api/payments/status?transactionId=${transactionId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      console.log('Check payment status response:', response.data);
-
-      if (response.data.success && response.data.status === 1) {
+      console.log('Response from /api/payments/status:', dbResponse.data);
+  
+      if (dbResponse.data.success && dbResponse.data.status === 'Đã thanh toán') {
+        console.log('Payment status is "Đã thanh toán" from database');
         setPaymentStatus('success');
         setIsPaymentProcessed(true);
-        console.log('Updated paymentStatus to success:', paymentStatus);
-
+        console.log('Updated paymentStatus to success based on database:', paymentStatus);
+  
         if (state?.fromBuyNow) {
-          await axios.delete('http://localhost:5000/api/cart/remove', {
-            headers: { Authorization: `Bearer ${token}` },
-            data: { userId: parseInt(user.UserId, 10), productId: checkoutItems[0].id },
-          });
+          console.log('Removing item from cart - fromBuyNow:', state.fromBuyNow, 'UserId:', user.UserId, 'ProductId:', checkoutItems[0].id);
+          try {
+            const response = await axios.delete('http://localhost:5000/api/cart/remove', {
+              headers: { Authorization: `Bearer ${token}` },
+              data: { userId: parseInt(user.UserId, 10), productId: checkoutItems[0].id },
+            });
+            console.log('Response from /api/cart/remove:', response.data);
+  
+            if (response.data.cart) {
+              setCheckoutItems(response.data.cart);
+              fetchCartFromDB();
+            }
+  
+            removeFromCart(checkoutItems[0].id);
+          } catch (err) {
+            console.error('Error removing item from cart:', err.response?.data || err.message);
+            if (err.response?.status === 404) {
+              console.log('Item not found in cart on server, removing from client anyway');
+              removeFromCart(checkoutItems[0].id);
+              if (err.response?.data?.cart) {
+                setCheckoutItems(err.response.data.cart);
+                fetchCartFromDB();
+              }
+            } else {
+              console.error('Failed to remove item from cart on server:', err.response?.data?.message || err.message);
+            }
+          }
         } else {
-          checkoutItems.forEach((item) => removeFromCart(item.id));
+          console.log('Removing items from cart - not fromBuyNow, Items:', checkoutItems);
+          for (const item of checkoutItems) {
+            console.log('Removing item with ProductId:', item.id);
+            try {
+              const response = await axios.delete('http://localhost:5000/api/cart/remove', {
+                headers: { Authorization: `Bearer ${token}` },
+                data: { userId: parseInt(user.UserId, 10), productId: item.id },
+              });
+              console.log('Response from /api/cart/remove:', response.data);
+  
+              if (response.data.cart) {
+                setCheckoutItems(response.data.cart);
+                fetchCartFromDB();
+              }
+  
+              removeFromCart(item.id);
+            } catch (err) {
+              console.error('Error removing item from cart on server:', err.response?.data || err.message);
+              if (err.response?.status === 404) {
+                console.log('Item not found in cart on server, removing from client anyway');
+                removeFromCart(item.id);
+                if (err.response?.data?.cart) {
+                  setCheckoutItems(err.response.data.cart);
+                  fetchCartFromDB();
+                }
+              } else {
+                console.error('Failed to remove item from cart on server:', err.response?.data?.message || err.message);
+              }
+            }
+          }
         }
-
+  
         toast.success(`Đơn hàng ${orderId} đã được thanh toán thành công!`, { autoClose: 2000 });
         setStep(4);
         setPendingOrder(null);
+        return true;
+      }
+  
+      const response = await axios.post(
+        'http://localhost:5000/api/zalopay/check-status',
+        { transactionId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      console.log('Response from /api/zalopay/check-status:', response.data);
+  
+      if (response.data.success && response.data.status === 1) {
+        console.log('Payment status is success from ZaloPay');
+        setPaymentStatus('success');
+        setIsPaymentProcessed(true);
+        console.log('Updated paymentStatus to success:', paymentStatus);
+  
+        if (state?.fromBuyNow) {
+          try {
+            const response = await axios.delete('http://localhost:5000/api/cart/remove', {
+              headers: { Authorization: `Bearer ${token}` },
+              data: { userId: parseInt(user.UserId, 10), productId: checkoutItems[0].id },
+            });
+            console.log('Response from /api/cart/remove:', response.data);
+  
+            if (response.data.cart) {
+              setCheckoutItems(response.data.cart);
+              fetchCartFromDB();
+            }
+  
+            removeFromCart(checkoutItems[0].id);
+          } catch (err) {
+            console.error('Error removing item from cart:', err.response?.data || err.message);
+            if (err.response?.status === 404) {
+              console.log('Item not found in cart on server, removing from client anyway');
+              removeFromCart(checkoutItems[0].id);
+              if (err.response?.data?.cart) {
+                setCheckoutItems(err.response.data.cart);
+                fetchCartFromDB();
+              }
+            } else {
+              console.error('Failed to remove item from cart on server:', err.response?.data?.message || err.message);
+            }
+          }
+        } else {
+          for (const item of checkoutItems) {
+            try {
+              const response = await axios.delete('http://localhost:5000/api/cart/remove', {
+                headers: { Authorization: `Bearer ${token}` },
+                data: { userId: parseInt(user.UserId, 10), productId: item.id },
+              });
+              console.log('Response from /api/cart/remove:', response.data);
+  
+              if (response.data.cart) {
+                setCheckoutItems(response.data.cart);
+                fetchCartFromDB();
+              }
+  
+              removeFromCart(item.id);
+            } catch (err) {
+              console.error('Error removing item from cart on server:', err.response?.data || err.message);
+              if (err.response?.status === 404) {
+                console.log('Item not found in cart on server, removing from client anyway');
+                removeFromCart(item.id);
+                if (err.response?.data?.cart) {
+                  setCheckoutItems(err.response.data.cart);
+                  fetchCartFromDB();
+                }
+              } else {
+                console.error('Failed to remove item from cart on server:', err.response?.data?.message || err.message);
+              }
+            }
+          }
+        }
+  
+        toast.success(`Đơn hàng ${orderId} đã được thanh toán thành công!`, { autoClose: 2000 });
+        setStep(4);
+        setPendingOrder(null);
+        return true;
       } else if (response.data.success && (response.data.status === 0 || response.data.status === 3)) {
         console.log('Payment is still processing, status:', response.data.status);
         setPaymentStatus('pending');
         toast.info('Đang chờ thanh toán, vui lòng quét mã QR hoặc mở ứng dụng ZaloPay để hoàn tất.', { autoClose: 2000 });
+        return false;
       } else if (response.data.success && response.data.status === -1) {
+        console.log('Payment failed, status:', response.data.status);
         setPaymentStatus('failed');
         setIsPaymentProcessed(true);
         setOrderId(null);
         toast.error('Thanh toán thất bại. Đơn hàng đã bị hủy. Vui lòng thử lại.', { autoClose: 2000 });
+        return true;
       } else {
+        console.log('Unknown response from /api/zalopay/check-status:', response.data);
+        if (retries > 0) {
+          console.log('Retrying checkPaymentStatus due to unknown response, retries left:', retries - 1);
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          return checkPaymentStatus(transactionId, retries - 1);
+        }
         setPaymentStatus('failed');
         setIsPaymentProcessed(true);
         setOrderId(null);
         toast.error(`Lỗi khi kiểm tra trạng thái thanh toán: ${response.data.message}`, { autoClose: 2000 });
+        return true;
       }
     } catch (err) {
-      console.error('Error checking payment status:', err.response?.data || err.message);
+      console.error('Error in checkPaymentStatus:', err.response?.data || err.message);
+      if (retries > 0) {
+        console.log('Retrying checkPaymentStatus, retries left:', retries - 1);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        return checkPaymentStatus(transactionId, retries - 1);
+      }
       setPaymentStatus('failed');
       setIsPaymentProcessed(true);
       setOrderId(null);
       toast.error(`Lỗi khi kiểm tra trạng thái thanh toán: ${err.response?.data?.message || err.message}`, { autoClose: 2000 });
+      return true;
     }
   };
 
@@ -99,34 +254,59 @@ const CheckoutPage = () => {
     console.log('Initial useEffect - Current paymentStatus:', paymentStatus);
     const query = new URLSearchParams(window.location.search);
     const orderIdFromQuery = query.get('orderId');
-    const appTransIdFromQuery = query.get('appTransId');
-
-    if (orderIdFromQuery && appTransIdFromQuery) {
-      setOrderId(orderIdFromQuery);
-      setAppTransId(appTransIdFromQuery);
-      setStep(3.5);
-      checkPaymentStatus(appTransIdFromQuery);
-    } else {
-      setStep(1);
-      setPaymentStatus('pending');
-      setQrCodeUrl('');
-      setZpTransToken(''); // Reset zp_trans_token
-      setAppTransId('');
-      setIsPaymentProcessed(false);
-    }
+    const transactionIdFromQuery = query.get('transactionId');
+  
+    const checkInitialStatus = async () => {
+      if (orderIdFromQuery && transactionIdFromQuery) {
+        console.log('Initial check - OrderId:', orderIdFromQuery, 'TransactionId:', transactionIdFromQuery);
+        setOrderId(orderIdFromQuery);
+        setTransactionId(transactionIdFromQuery);
+        setStep(3.5);
+  
+        try {
+          const dbResponse = await axios.get(
+            `http://localhost:5000/api/payments/status?transactionId=${transactionIdFromQuery}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          console.log('Initial check response from /api/payments/status:', dbResponse.data);
+  
+          if (dbResponse.data.success && dbResponse.data.status === 'Đã thanh toán') {
+            setPaymentStatus('success');
+            setIsPaymentProcessed(true);
+            toast.success(`Đơn hàng ${orderIdFromQuery} đã được thanh toán thành công!`, { autoClose: 2000 });
+            setStep(4);
+            setPendingOrder(null);
+          } else {
+            checkPaymentStatus(transactionIdFromQuery);
+          }
+        } catch (err) {
+          console.error('Error checking initial payment status:', err.response?.data || err.message);
+          checkPaymentStatus(transactionIdFromQuery);
+        }
+      } else {
+        setStep(1);
+        setPaymentStatus('pending');
+        setQrCodeUrl('');
+        setZpTransToken('');
+        setTransactionId('');
+        setIsPaymentProcessed(false);
+      }
+    };
+  
+    checkInitialStatus();
   }, []);
 
   useEffect(() => {
     const handleFocus = () => {
       const query = new URLSearchParams(window.location.search);
       const orderIdFromQuery = query.get('orderId');
-      const appTransIdFromQuery = query.get('appTransId');
+      const transactionIdFromQuery = query.get('transactionId');
 
-      if (orderIdFromQuery && appTransIdFromQuery) {
+      if (orderIdFromQuery && transactionIdFromQuery) {
         setOrderId(orderIdFromQuery);
-        setAppTransId(appTransIdFromQuery);
+        setTransactionId(transactionIdFromQuery);
         setStep(3.5);
-        checkPaymentStatus(appTransIdFromQuery);
+        checkPaymentStatus(transactionIdFromQuery);
       }
     };
 
@@ -226,43 +406,77 @@ const CheckoutPage = () => {
   };
 
   useEffect(() => {
-    console.log('Timeout useEffect - Current paymentStatus:', paymentStatus, 'isPaymentProcessed:', isPaymentProcessed, 'appTransId:', appTransId);
+    console.log('Timeout useEffect - Current paymentStatus:', paymentStatus, 'isPaymentProcessed:', isPaymentProcessed, 'TransactionId:', transactionId, 'PaymentMethod:', paymentMethod);
     let interval, timeout;
-
-    if (paymentMethod === 'online' && appTransId && !isPaymentProcessed) {
-      // Kiểm tra ngay lập tức sau 5 giây
+  
+    if (paymentMethod === 'online' && transactionId && !isPaymentProcessed) {
+      console.log('Starting payment status check for TransactionId:', transactionId);
       setTimeout(() => {
         if (!isPaymentProcessed) {
-          checkPaymentStatus(appTransId);
+          checkPaymentStatus(transactionId);
         }
       }, 5000);
-
-      // Kiểm tra định kỳ mỗi 5 giây
-      interval = setInterval(() => {
+  
+      interval = setInterval(async () => {
         if (!isPaymentProcessed) {
-          checkPaymentStatus(appTransId);
+          console.log('Interval check for TransactionId:', transactionId);
+          const isProcessed = await checkPaymentStatus(transactionId);
+          if (isProcessed) {
+            console.log('Payment processed, clearing interval');
+            clearInterval(interval);
+          } else {
+            console.log('Payment still processing, continuing interval');
+          }
         } else {
-          clearInterval(interval); // Dừng interval nếu thanh toán đã được xử lý
+          console.log('Payment already processed, clearing interval');
+          clearInterval(interval);
         }
       }, 5000);
-
-      // Hết thời gian sau 30 phút
-      timeout = setTimeout(() => {
+  
+      timeout = setTimeout(async () => {
+        console.log('Timeout reached for TransactionId:', transactionId);
         clearInterval(interval);
         if (paymentStatus !== 'success' && !isPaymentProcessed) {
-          setPaymentStatus('failed');
-          setIsPaymentProcessed(true);
-          setOrderId(null);
-          toast.error('Thanh toán đã hết thời gian. Đơn hàng đã bị hủy. Vui lòng thử lại.', { autoClose: 2000 });
+          try {
+            console.log('Final check with /api/payments/status for TransactionId:', transactionId);
+            const dbResponse = await axios.get(
+              `http://localhost:5000/api/payments/status?transactionId=${transactionId}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            console.log('Final check response:', dbResponse.data);
+  
+            if (dbResponse.data.success && dbResponse.data.status === 'Đã thanh toán') {
+              console.log('Final check: Payment status is "Đã thanh toán"');
+              setPaymentStatus('success');
+              setIsPaymentProcessed(true);
+              toast.success(`Đơn hàng ${orderId} đã được thanh toán thành công!`, { autoClose: 2000 });
+              setStep(4);
+              setPendingOrder(null);
+            } else {
+              console.log('Final check: Payment status is not "Đã thanh toán"');
+              setPaymentStatus('failed');
+              setIsPaymentProcessed(true);
+              setOrderId(null);
+              toast.error('Thanh toán đã hết thời gian. Đơn hàng đã bị hủy. Vui lòng thử lại.', { autoClose: 2000 });
+            }
+          } catch (err) {
+            console.error('Error checking payment status on timeout:', err.response?.data || err.message);
+            setPaymentStatus('failed');
+            setIsPaymentProcessed(true);
+            setOrderId(null);
+            toast.error('Thanh toán đã hết thời gian. Đơn hàng đã bị hủy. Vui lòng thử lại.', { autoClose: 2000 });
+          }
         }
-      }, 30 * 60 * 1000);
+      }, 5 * 60 * 1000);
+    } else {
+      console.log('Conditions not met for payment status check:', { paymentMethod, transactionId, isPaymentProcessed });
     }
-
+  
     return () => {
       if (interval) clearInterval(interval);
       if (timeout) clearTimeout(timeout);
     };
-  }, [appTransId, paymentMethod, isPaymentProcessed, paymentStatus]);
+  }, [transactionId, paymentMethod, isPaymentProcessed, paymentStatus]);
 
   const handleOrderSubmit = async () => {
     if (!token || !user?.UserId) {
@@ -362,13 +576,17 @@ const CheckoutPage = () => {
           throw new Error(zalopayResponse.data.message || 'Không thể tạo đơn hàng ZaloPay');
         }
 
-        setQrCodeUrl(zalopayResponse.data.orderUrl);
-        setZpTransToken(zalopayResponse.data.zpTransToken); // Lưu zp_trans_token
-        setAppTransId(zalopayResponse.data.appTransId);
+        const { orderUrl, zpTransToken, transactionId } = zalopayResponse.data;
+        if (!transactionId) {
+          throw new Error('Không nhận được TransactionId từ ZaloPay');
+        }
+
+        setQrCodeUrl(orderUrl);
+        setZpTransToken(zpTransToken);
+        setTransactionId(transactionId);
         setStep(3.5);
 
-        // Mở orderUrl trong tab mới để hiển thị trang thanh toán ZaloPay
-        window.open(zalopayResponse.data.orderUrl, '_blank');
+        window.open(orderUrl, '_blank');
       }
     } catch (error) {
       console.error('Error submitting order:', error.response || error);
@@ -385,7 +603,6 @@ const CheckoutPage = () => {
       const zalopayUrl = `zalopay://app?zp_trans_token=${zpTransToken}`;
       window.location.href = zalopayUrl;
 
-      // Fallback nếu không mở được ứng dụng ZaloPay
       setTimeout(() => {
         toast.info('Nếu ứng dụng ZaloPay không mở, vui lòng quét mã QR hoặc cài đặt ZaloPay.', { autoClose: 5000 });
       }, 2000);
@@ -400,32 +617,40 @@ const CheckoutPage = () => {
   };
 
   return (
-    <div className="bg-gradient-to-br from-indigo-50 via-gray-50 to-pink-50 min-h-screen py-12 px-4">
+    <div className="bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-100 min-h-screen py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-12">
+        {/* Thanh tiến trình */}
+        <div className="flex justify-between items-center mb-12 relative">
           {[1, 2, 3, 4].map((s) => (
             <motion.div
               key={s}
-              className={`flex-1 text-center ${step >= s ? 'text-indigo-600' : 'text-gray-400'}`}
+              className={`flex-1 text-center relative z-10 ${step >= s ? 'text-indigo-600' : 'text-gray-400'}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.5 }}
             >
               <div
-                className={`w-10 h-10 mx-auto rounded-full flex items-center justify-center font-semibold ${
-                  step >= s ? 'bg-indigo-600 text-white' : 'bg-gray-200'
+                className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center font-semibold text-lg shadow-md transition-all duration-300 ${
+                  step >= s ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'
                 }`}
               >
                 {s}
               </div>
-              <p className="mt-2 text-sm font-medium">
-                {s === 1 ? 'Thông tin giao hàng' : s === 2 ? 'Thanh toán & Vận chuyển' : s === 3 ? 'Xác nhận' : 'Hoàn tất'}
+              <p className="mt-3 text-sm font-medium tracking-wide">
+                {s === 1 ? 'Thông Tin Giao Hàng' : s === 2 ? 'Thanh Toán & Vận Chuyển' : s === 3 ? 'Xác Nhận Đơn Hàng' : 'Hoàn Tất'}
               </p>
             </motion.div>
           ))}
+          <div className="absolute top-6 left-0 w-full h-1 bg-gray-200 z-0">
+            <div
+              className="h-full bg-indigo-600 transition-all duration-500"
+              style={{ width: `${((step - 1) / 3) * 100}%` }}
+            />
+          </div>
         </div>
 
         <AnimatePresence mode="wait">
+          {/* Bước 1: Thông tin giao hàng */}
           {step === 1 && (
             <motion.div
               key="step1"
@@ -433,17 +658,19 @@ const CheckoutPage = () => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -50 }}
               transition={{ duration: 0.5 }}
-              className="bg-white p-8 rounded-2xl shadow-lg"
+              className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300"
             >
-              <h2 className="text-2xl font-bold text-indigo-700 mb-6">Thông tin giao hàng</h2>
-              <div className="space-y-4">
+              <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600 mb-6">
+                Thông Tin Giao Hàng
+              </h2>
+              <div className="space-y-5">
                 <input
                   type="text"
                   name="fullName"
                   value={shippingInfo.fullName}
                   onChange={handleShippingChange}
                   placeholder="Họ và tên *"
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-4 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200 placeholder-gray-400"
                   required
                 />
                 <input
@@ -452,7 +679,7 @@ const CheckoutPage = () => {
                   value={shippingInfo.phone}
                   onChange={handleShippingChange}
                   placeholder="Số điện thoại *"
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-4 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200 placeholder-gray-400"
                   required
                 />
                 <input
@@ -461,14 +688,14 @@ const CheckoutPage = () => {
                   value={shippingInfo.email}
                   onChange={handleShippingChange}
                   placeholder="Email *"
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-4 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200 placeholder-gray-400"
                   required
                 />
                 <select
                   name="province"
                   value={shippingInfo.province}
                   onChange={handleShippingChange}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-4 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200 text-gray-700"
                   required
                 >
                   <option value="">Chọn tỉnh/thành phố *</option>
@@ -482,7 +709,7 @@ const CheckoutPage = () => {
                   name="district"
                   value={shippingInfo.district}
                   onChange={handleShippingChange}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-4 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200 text-gray-700"
                   disabled={!shippingInfo.province}
                   required
                 >
@@ -497,7 +724,7 @@ const CheckoutPage = () => {
                   name="ward"
                   value={shippingInfo.ward}
                   onChange={handleShippingChange}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-4 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200 text-gray-700"
                   disabled={!shippingInfo.district}
                   required
                 >
@@ -514,13 +741,13 @@ const CheckoutPage = () => {
                   value={shippingInfo.address}
                   onChange={handleShippingChange}
                   placeholder="Địa chỉ chi tiết (số nhà, tên đường) *"
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-4 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200 placeholder-gray-400"
                   required
                 />
               </div>
               <button
                 onClick={nextStep}
-                className="mt-6 w-full py-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all duration-300 font-semibold"
+                className="mt-8 w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 font-semibold shadow-md hover:shadow-lg"
                 disabled={
                   !shippingInfo.fullName ||
                   !shippingInfo.phone ||
@@ -531,11 +758,12 @@ const CheckoutPage = () => {
                   !shippingInfo.address
                 }
               >
-                Tiếp tục
+                Tiếp Tục
               </button>
             </motion.div>
           )}
 
+          {/* Bước 2: Phương thức thanh toán & vận chuyển */}
           {step === 2 && (
             <motion.div
               key="step2"
@@ -543,81 +771,84 @@ const CheckoutPage = () => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -50 }}
               transition={{ duration: 0.5 }}
-              className="bg-white p-8 rounded-2xl shadow-lg"
+              className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300"
             >
-              <h2 className="text-2xl font-bold text-indigo-700 mb-6">Phương thức thanh toán & vận chuyển</h2>
-              <div className="space-y-6">
+              <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600 mb-6">
+                Phương Thức Thanh Toán & Vận Chuyển
+              </h2>
+              <div className="space-y-8">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-3">Chọn phương thức thanh toán</h3>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">Chọn phương thức thanh toán</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div
                       onClick={() => setPaymentMethod('cod')}
-                      className={`p-4 border rounded-lg cursor-pointer flex items-center gap-3 ${
-                        paymentMethod === 'cod' ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'
+                      className={`p-5 border rounded-lg cursor-pointer flex items-center gap-4 transition-all duration-200 ${
+                        paymentMethod === 'cod' ? 'border-indigo-600 bg-indigo-50 shadow-md' : 'border-gray-200 hover:border-indigo-300'
                       }`}
                     >
-                      <FaMoneyBillWave className="text-indigo-600" />
-                      <span>Thanh toán khi nhận hàng (COD)</span>
+                      <FaMoneyBillWave className="text-indigo-600 text-2xl" />
+                      <span className="text-gray-700 font-medium">Thanh toán khi nhận hàng (COD)</span>
                     </div>
                     <div
                       onClick={() => setPaymentMethod('online')}
-                      className={`p-4 border rounded-lg cursor-pointer flex items-center gap-3 ${
-                        paymentMethod === 'online' ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'
+                      className={`p-5 border rounded-lg cursor-pointer flex items-center gap-4 transition-all duration-200 ${
+                        paymentMethod === 'online' ? 'border-indigo-600 bg-indigo-50 shadow-md' : 'border-gray-200 hover:border-indigo-300'
                       }`}
                     >
-                      <FaCreditCard className="text-indigo-600" />
-                      <span>Thanh toán online (ZaloPay)</span>
+                      <FaCreditCard className="text-indigo-600 text-2xl" />
+                      <span className="text-gray-700 font-medium">Thanh toán online (ZaloPay)</span>
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-3">Chọn phương thức vận chuyển</h3>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">Chọn phương thức vận chuyển</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div
                       onClick={() => setShippingMethod('standard')}
-                      className={`p-4 border rounded-lg cursor-pointer flex items-center justify-between ${
-                        shippingMethod === 'standard' ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'
+                      className={`p-5 border rounded-lg cursor-pointer flex items-center justify-between transition-all duration-200 ${
+                        shippingMethod === 'standard' ? 'border-indigo-600 bg-indigo-50 shadow-md' : 'border-gray-200 hover:border-indigo-300'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <FaTruck className="text-indigo-600" />
-                        <span>Giao hàng tiết kiệm</span>
+                      <div className="flex items-center gap-4">
+                        <FaTruck className="text-indigo-600 text-2xl" />
+                        <span className="text-gray-700 font-medium">Giao hàng tiết kiệm</span>
                       </div>
-                      <span className="text-sm font-medium">15.000 VND</span>
+                      <span className="text-sm font-semibold text-indigo-600">15.000 VND</span>
                     </div>
                     <div
                       onClick={() => setShippingMethod('fast')}
-                      className={`p-4 border rounded-lg cursor-pointer flex items-center justify-between ${
-                        shippingMethod === 'fast' ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'
+                      className={`p-5 border rounded-lg cursor-pointer flex items-center justify-between transition-all duration-200 ${
+                        shippingMethod === 'fast' ? 'border-indigo-600 bg-indigo-50 shadow-md' : 'border-gray-200 hover:border-indigo-300'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <FaTruck className="text-indigo-600" />
-                        <span>Giao hàng nhanh</span>
+                      <div className="flex items-center gap-4">
+                        <FaTruck className="text-indigo-600 text-2xl" />
+                        <span className="text-gray-700 font-medium">Giao hàng nhanh</span>
                       </div>
-                      <span className="text-sm font-medium">30.000 VND</span>
+                      <span className="text-sm font-semibold text-indigo-600">30.000 VND</span>
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="flex gap-4 mt-6">
+              <div className="flex gap-4 mt-8">
                 <button
                   onClick={prevStep}
-                  className="w-full py-3 bg-gray-300 text-gray-700 rounded-full hover:bg-gray-400 transition-all duration-300 font-semibold"
+                  className="w-full py-4 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition-all duration-300 font-semibold shadow-sm"
                 >
-                  Quay lại
+                  Quay Lại
                 </button>
                 <button
                   onClick={nextStep}
-                  className="w-full py-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all duration-300 font-semibold"
+                  className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 font-semibold shadow-md hover:shadow-lg"
                 >
-                  Tiếp tục
+                  Tiếp Tục
                 </button>
               </div>
             </motion.div>
           )}
 
+          {/* Bước 3: Xác nhận đơn hàng */}
           {step === 3 && (
             <motion.div
               key="step3"
@@ -625,16 +856,18 @@ const CheckoutPage = () => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -50 }}
               transition={{ duration: 0.5 }}
-              className="bg-white p-8 rounded-2xl shadow-lg"
+              className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300"
             >
-              <h2 className="text-2xl font-bold text-indigo-700 mb-6">Xác nhận đơn hàng</h2>
-              <div className="space-y-6">
+              <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600 mb-6">
+                Xác Nhận Đơn Hàng
+              </h2>
+              <div className="space-y-8">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-3">Thông tin giao hàng</h3>
-                  <p className="text-gray-600">
-                    {shippingInfo.fullName} | {shippingInfo.phone} | {shippingInfo.email}
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">Thông Tin Giao Hàng</h3>
+                  <p className="text-gray-600 leading-relaxed">
+                    <span className="font-medium">{shippingInfo.fullName}</span> | {shippingInfo.phone} | {shippingInfo.email}
                   </p>
-                  <p className="text-gray-600">
+                  <p className="text-gray-600 leading-relaxed">
                     {shippingInfo.address},{' '}
                     {wards.find((w) => w.code === parseInt(shippingInfo.ward))?.name || ''},{' '}
                     {districts.find((d) => d.code === parseInt(shippingInfo.district))?.name || ''},{' '}
@@ -643,59 +876,65 @@ const CheckoutPage = () => {
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-3">Phương thức</h3>
-                  <p className="text-gray-600">
-                    Thanh toán: {paymentMethod === 'cod' ? 'Thanh toán khi nhận hàng' : 'Thanh toán online'}
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">Phương Thức</h3>
+                  <p className="text-gray-600 leading-relaxed">
+                    <span className="font-medium">Thanh toán:</span> {paymentMethod === 'cod' ? 'Thanh toán khi nhận hàng' : 'Thanh toán online'}
                   </p>
-                  <p className="text-gray-600">
-                    Vận chuyển: {shippingMethod === 'fast' ? 'Giao hàng nhanh' : 'Giao hàng tiết kiệm'} (
+                  <p className="text-gray-600 leading-relaxed">
+                    <span className="font-medium">Vận chuyển:</span> {shippingMethod === 'fast' ? 'Giao hàng nhanh' : 'Giao hàng tiết kiệm'} (
                     {shippingFee.toLocaleString('vi-VN')} VND)
                   </p>
-                  <p className="text-gray-600">Dự kiến giao hàng: {formatDisplayDate(getEstimatedDeliveryDate())}</p>
+                  <p className="text-gray-600 leading-relaxed">
+                    <span className="font-medium">Dự kiến giao hàng:</span> {formatDisplayDate(getEstimatedDeliveryDate())}
+                  </p>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-3">Sản phẩm</h3>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">Sản Phẩm</h3>
                   {checkoutItems.length === 0 ? (
                     <p className="text-gray-600">Không có sản phẩm nào để hiển thị</p>
                   ) : (
                     checkoutItems.map((item) => (
-                      <div key={item.id} className="flex justify-between items-center py-2 border-b">
-                        <div className="flex items-center gap-3">
-                          <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded-lg" />
-                          <span>{item.name} (x{item.quantity})</span>
+                      <div key={item.id} className="flex justify-between items-center py-3 border-b border-gray-100">
+                        <div className="flex items-center gap-4">
+                          <img src={item.image} alt={item.name} className="w-14 h-14 object-cover rounded-lg shadow-sm" />
+                          <div>
+                            <span className="text-gray-800 font-medium">{item.name}</span>
+                            <p className="text-sm text-gray-500">Số lượng: {item.quantity}</p>
+                          </div>
                         </div>
-                        <span className="font-medium">
+                        <span className="font-semibold text-indigo-600">
                           {(item.price * item.quantity).toLocaleString('vi-VN')} VND
                         </span>
                       </div>
                     ))
                   )}
-                  <div className="flex justify-between mt-4">
-                    <span className="text-lg font-semibold">Tổng cộng:</span>
-                    <span className="text-lg font-bold text-indigo-600">{totalAmount.toLocaleString('vi-VN')} VND</span>
+                  <div className="flex justify-between mt-6">
+                    <span className="text-lg font-semibold text-gray-800">Tổng cộng:</span>
+                    <span className="text-xl font-bold text-indigo-600">{totalAmount.toLocaleString('vi-VN')} VND</span>
                   </div>
                 </div>
               </div>
-              <div className="flex gap-4 mt-6">
+              <div className="flex gap-4 mt-8">
                 <button
                   onClick={prevStep}
-                  className="w-full py-3 bg-gray-300 text-gray-700 rounded-full hover:bg-gray-400 transition-all duration-300 font-semibold"
+                  className="w-full py-4 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition-all duration-300 font-semibold shadow-sm"
                 >
-                  Quay lại
+                  Quay Lại
                 </button>
                 <button
                   onClick={handleOrderSubmit}
-                  className="w-full py-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all duration-300 font-semibold flex items-center justify-center gap-2"
+                  className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 font-semibold shadow-md hover:shadow-lg flex items-center justify-center gap-2"
                   disabled={isLoading || checkoutItems.length === 0}
                 >
                   {isLoading ? <FaSpinner className="animate-spin" /> : null}
-                  Xác nhận đặt hàng
+                  Xác Nhận Đặt Hàng
                 </button>
               </div>
             </motion.div>
           )}
 
+          {/* Bước 3.5: Thanh toán với ZaloPay */}
           {step === 3.5 && paymentMethod === 'online' && (
             <motion.div
               key="step3.5"
@@ -703,95 +942,103 @@ const CheckoutPage = () => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -50 }}
               transition={{ duration: 0.5 }}
-              className="bg-white p-8 rounded-2xl shadow-lg text-center"
+              className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 text-center"
             >
-              <h2 className="text-2xl font-bold text-indigo-700 mb-6">Thanh toán với ZaloPay</h2>
-              <p className="text-gray-600 mb-6">
-                Vui lòng quét mã QR bên dưới hoặc nhấn nút để mở ứng dụng ZaloPay để thanh toán.
+              <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600 mb-6">
+                Thanh Toán Với ZaloPay
+              </h2>
+              <p className="text-gray-600 mb-6 leading-relaxed">
+                Vui lòng quét mã QR bên dưới hoặc nhấn nút để mở ứng dụng ZaloPay và hoàn tất thanh toán.
               </p>
               {zpTransToken && (
                 <div className="flex justify-center mb-6">
-                  <QRCode value={`zalopay://app?zp_trans_token=${zpTransToken}`} size={200} />
+                  <div className="p-4 bg-gray-50 rounded-lg shadow-inner">
+                    <QRCode value={`zalopay://app?zp_trans_token=${zpTransToken}`} size={220} />
+                  </div>
                 </div>
               )}
               <p className="text-gray-600 mb-6">
-                Tổng tiền: <strong>{totalAmount.toLocaleString('vi-VN')} VND</strong>
+                <span className="font-medium">Tổng tiền:</span>{' '}
+                <strong className="text-indigo-600 text-lg">{totalAmount.toLocaleString('vi-VN')} VND</strong>
               </p>
               <div className="flex flex-col gap-4 mb-6">
                 <button
                   onClick={handleOpenZaloPay}
-                  className="py-3 px-6 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all duration-300 font-semibold"
+                  className="py-4 px-6 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 font-semibold shadow-md hover:shadow-lg"
                 >
-                  Mở ứng dụng ZaloPay
+                  Mở Ứng Dụng ZaloPay
                 </button>
                 <a
                   href={qrCodeUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="py-3 px-6 bg-gray-300 text-gray-700 rounded-full hover:bg-gray-400 transition-all duration-300 font-semibold"
+                  className="py-4 px-6 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition-all duration-300 font-semibold shadow-sm"
                 >
-                  Xem trang thanh toán ZaloPay
+                  Xem Trang Thanh Toán ZaloPay
                 </a>
               </div>
               {paymentStatus === 'pending' && (
                 <p className="text-gray-600 flex items-center justify-center gap-2">
-                  <FaSpinner className="animate-spin" /> Đang chờ thanh toán...
+                  <FaSpinner className="animate-spin text-indigo-600" /> Đang chờ thanh toán...
                 </p>
               )}
               {paymentStatus === 'failed' && (
-                <p className="text-red-600">
+                <p className="text-red-600 font-medium">
                   Thanh toán thất bại hoặc hết thời gian. Đơn hàng đã bị hủy. Vui lòng thử lại.
                 </p>
               )}
               {paymentStatus === 'success' && (
-                <p className="text-green-600">
+                <p className="text-green-600 font-medium">
                   Thanh toán thành công! Đang xử lý đơn hàng...
                 </p>
               )}
               <div className="flex gap-4 mt-6">
                 <button
                   onClick={() => setStep(2)}
-                  className="w-full py-3 bg-gray-300 text-gray-700 rounded-full hover:bg-gray-400 transition-all duration-300 font-semibold"
+                  className="w-full py-4 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition-all duration-300 font-semibold shadow-sm"
                 >
-                  Quay lại
+                  Quay Lại
                 </button>
                 {paymentStatus === 'failed' && (
                   <button
                     onClick={handleOrderSubmit}
-                    className="w-full py-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all duration-300 font-semibold"
+                    className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 font-semibold shadow-md hover:shadow-lg"
                   >
-                    Thử lại
+                    Thử Lại
                   </button>
                 )}
               </div>
             </motion.div>
           )}
 
+          {/* Bước 4: Hoàn tất */}
           {step === 4 && (
             <motion.div
               key="step4"
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.5 }}
-              className="bg-white p-8 rounded-2xl shadow-lg text-center"
+              className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 text-center"
             >
-              <FaCheckCircle className="text-6xl text-green-500 mx-auto mb-6" />
-              <h2 className="text-2xl font-bold text-indigo-700 mb-4">Đặt hàng thành công!</h2>
-              <p className="text-gray-600 mb-6">
-                Cảm ơn bạn đã đặt hàng. Mã đơn hàng: <strong>{orderId}</strong>. Chúng tôi sẽ liên hệ sớm để xác nhận.
+              <FaCheckCircle className="text-7xl text-green-500 mx-auto mb-6 animate-bounce" />
+              <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-600 mb-4">
+                Đặt Hàng Thành Công!
+              </h2>
+              <p className="text-gray-600 mb-6 leading-relaxed">
+                Cảm ơn bạn đã đặt hàng. Mã đơn hàng: <strong className="text-indigo-600">{orderId}</strong>. Chúng tôi sẽ liên hệ sớm để xác nhận.
               </p>
               <div className="flex gap-4">
                 <button
                   onClick={() => navigate(`/order/${orderId}`)}
-                  className="w-full py-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all duration-300 font-semibold"
+                  className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-full hover:from-indigo-700 hover:to-blue-700 transition-all duration-300 font-semibold shadow-md hover:shadow-lg"
                 >
-                  Xem chi tiết đơn hàng
+                  Xem Chi Tiết Đơn Hàng
                 </button>
                 <button
                   onClick={() => navigate('/')}
-                  className="w-full py-3 bg-gray-300 text-gray-700 rounded-full hover:bg-gray-400 transition-all duration-300 font-semibold"
+                  className="w-full py-4 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition-all duration-300 font-semibold shadow-sm"
                 >
-                  Quay về trang chủ
+                  Quay Về Trang Chủ
                 </button>
               </div>
             </motion.div>
