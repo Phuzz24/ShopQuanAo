@@ -8,7 +8,7 @@ import { toast } from 'react-toastify';
 import axios from 'axios';
 import QRCode from 'react-qr-code';
 import { format, addDays } from 'date-fns';
-import { toZonedTime, fromZonedTime } from 'date-fns-tz'; // Import đúng hàm
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 
 const CheckoutPage = () => {
   const { cart, removeFromCart, fetchCartFromDB } = useCart();
@@ -34,12 +34,13 @@ const CheckoutPage = () => {
   const [orderId, setOrderId] = useState(null);
   const [checkoutItems, setCheckoutItems] = useState([]);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [zpTransToken, setZpTransToken] = useState(''); // Thêm state cho zp_trans_token
   const [paymentStatus, setPaymentStatus] = useState('pending');
   const [appTransId, setAppTransId] = useState('');
   const [isPaymentProcessed, setIsPaymentProcessed] = useState(false);
   const [pendingOrder, setPendingOrder] = useState(null);
 
-  const timeZone = 'Asia/Ho_Chi_Minh'; // Múi giờ Việt Nam
+  const timeZone = 'Asia/Ho_Chi_Minh';
 
   const checkPaymentStatus = async (appTransId) => {
     try {
@@ -58,7 +59,6 @@ const CheckoutPage = () => {
         setIsPaymentProcessed(true);
         console.log('Updated paymentStatus to success:', paymentStatus);
 
-        // Xóa giỏ hàng sau khi thanh toán thành công
         if (state?.fromBuyNow) {
           await axios.delete('http://localhost:5000/api/cart/remove', {
             headers: { Authorization: `Bearer ${token}` },
@@ -74,23 +74,23 @@ const CheckoutPage = () => {
       } else if (response.data.success && (response.data.status === 0 || response.data.status === 3)) {
         console.log('Payment is still processing, status:', response.data.status);
         setPaymentStatus('pending');
-        toast.info('Đang chờ thanh toán, vui lòng quét mã QR để hoàn tất.', { autoClose: 2000 });
+        toast.info('Đang chờ thanh toán, vui lòng quét mã QR hoặc mở ứng dụng ZaloPay để hoàn tất.', { autoClose: 2000 });
       } else if (response.data.success && response.data.status === -1) {
         setPaymentStatus('failed');
         setIsPaymentProcessed(true);
-        setOrderId(null); // Xóa orderId vì đơn hàng đã bị xóa bởi backend
+        setOrderId(null);
         toast.error('Thanh toán thất bại. Đơn hàng đã bị hủy. Vui lòng thử lại.', { autoClose: 2000 });
       } else {
         setPaymentStatus('failed');
         setIsPaymentProcessed(true);
-        setOrderId(null); // Xóa orderId vì đơn hàng đã bị xóa bởi backend
+        setOrderId(null);
         toast.error(`Lỗi khi kiểm tra trạng thái thanh toán: ${response.data.message}`, { autoClose: 2000 });
       }
     } catch (err) {
       console.error('Error checking payment status:', err.response?.data || err.message);
       setPaymentStatus('failed');
       setIsPaymentProcessed(true);
-      setOrderId(null); // Xóa orderId vì đơn hàng đã bị xóa bởi backend
+      setOrderId(null);
       toast.error(`Lỗi khi kiểm tra trạng thái thanh toán: ${err.response?.data?.message || err.message}`, { autoClose: 2000 });
     }
   };
@@ -110,6 +110,7 @@ const CheckoutPage = () => {
       setStep(1);
       setPaymentStatus('pending');
       setQrCodeUrl('');
+      setZpTransToken(''); // Reset zp_trans_token
       setAppTransId('');
       setIsPaymentProcessed(false);
     }
@@ -172,10 +173,10 @@ const CheckoutPage = () => {
   }, 0) + shippingFee;
 
   const getEstimatedDeliveryDate = () => {
-    const today = toZonedTime(new Date(), timeZone); // Sử dụng toZonedTime
+    const today = toZonedTime(new Date(), timeZone);
     const daysToAdd = shippingMethod === 'fast' ? 2 : 5;
     const deliveryDate = addDays(today, daysToAdd);
-    return fromZonedTime(deliveryDate, timeZone).toISOString(); // Sử dụng fromZonedTime
+    return fromZonedTime(deliveryDate, timeZone).toISOString();
   };
 
   useEffect(() => {
@@ -228,19 +229,24 @@ const CheckoutPage = () => {
     console.log('Timeout useEffect - Current paymentStatus:', paymentStatus, 'isPaymentProcessed:', isPaymentProcessed, 'appTransId:', appTransId);
     let interval, timeout;
 
-    if (paymentMethod === 'online' && appTransId) {
+    if (paymentMethod === 'online' && appTransId && !isPaymentProcessed) {
+      // Kiểm tra ngay lập tức sau 5 giây
       setTimeout(() => {
         if (!isPaymentProcessed) {
           checkPaymentStatus(appTransId);
         }
       }, 5000);
 
+      // Kiểm tra định kỳ mỗi 5 giây
       interval = setInterval(() => {
         if (!isPaymentProcessed) {
           checkPaymentStatus(appTransId);
+        } else {
+          clearInterval(interval); // Dừng interval nếu thanh toán đã được xử lý
         }
       }, 5000);
 
+      // Hết thời gian sau 30 phút
       timeout = setTimeout(() => {
         clearInterval(interval);
         if (paymentStatus !== 'success' && !isPaymentProcessed) {
@@ -256,123 +262,140 @@ const CheckoutPage = () => {
       if (interval) clearInterval(interval);
       if (timeout) clearTimeout(timeout);
     };
-  }, [appTransId, paymentMethod, isPaymentProcessed]);
+  }, [appTransId, paymentMethod, isPaymentProcessed, paymentStatus]);
 
-  // src/routes/CheckoutPage.jsx
-const handleOrderSubmit = async () => {
-  if (!token || !user?.UserId) {
-    toast.error('Vui lòng đăng nhập để đặt hàng!', { autoClose: 2000 });
-    navigate('/login');
-    return;
-  }
+  const handleOrderSubmit = async () => {
+    if (!token || !user?.UserId) {
+      toast.error('Vui lòng đăng nhập để đặt hàng!', { autoClose: 2000 });
+      navigate('/login');
+      return;
+    }
 
-  if (checkoutItems.length === 0) {
-    toast.error('Không có sản phẩm nào để thanh toán!', { autoClose: 2000 });
-    return;
-  }
+    if (checkoutItems.length === 0) {
+      toast.error('Không có sản phẩm nào để thanh toán!', { autoClose: 2000 });
+      return;
+    }
 
-  if (
-    !shippingInfo.fullName ||
-    !shippingInfo.phone ||
-    !shippingInfo.email ||
-    !shippingInfo.province ||
-    !shippingInfo.district ||
-    !shippingInfo.ward ||
-    !shippingInfo.address
-  ) {
-    toast.error('Vui lòng điền đầy đủ thông tin giao hàng!', { autoClose: 2000 });
-    setStep(1);
-    return;
-  }
+    if (
+      !shippingInfo.fullName ||
+      !shippingInfo.phone ||
+      !shippingInfo.email ||
+      !shippingInfo.province ||
+      !shippingInfo.district ||
+      !shippingInfo.ward ||
+      !shippingInfo.address
+    ) {
+      toast.error('Vui lòng điền đầy đủ thông tin giao hàng!', { autoClose: 2000 });
+      setStep(1);
+      return;
+    }
 
-  const provinceName = provinces.find((p) => p.code === parseInt(shippingInfo.province))?.name || '';
-  const districtName = districts.find((d) => d.code === parseInt(shippingInfo.district))?.name || '';
-  const wardName = wards.find((w) => w.code === parseInt(shippingInfo.ward))?.name || '';
+    const provinceName = provinces.find((p) => p.code === parseInt(shippingInfo.province))?.name || '';
+    const districtName = districts.find((d) => d.code === parseInt(shippingInfo.district))?.name || '';
+    const wardName = wards.find((w) => w.code === parseInt(shippingInfo.ward))?.name || '';
 
-  const fullAddress = [
-    shippingInfo.address,
-    wardName,
-    districtName,
-    provinceName,
-  ].filter(Boolean).join(', ');
+    const fullAddress = [
+      shippingInfo.address,
+      wardName,
+      districtName,
+      provinceName,
+    ].filter(Boolean).join(', ');
 
-  const orderData = {
-    orderId: generateOrderId(),
-    userId: parseInt(user.UserId, 10),
-    total: totalAmount,
-    address: fullAddress || 'Chưa cung cấp địa chỉ đầy đủ',
-    fullName: shippingInfo.fullName,
-    phone: shippingInfo.phone,
-    email: shippingInfo.email, // Đảm bảo email được gửi
-    paymentMethod: paymentMethod === 'cod' ? 'Thanh toán khi nhận hàng' : 'Thanh toán online',
-    estimatedDeliveryDate: getEstimatedDeliveryDate(),
-    items: checkoutItems.map((item) => ({
-      productId: item.id,
-      quantity: item.quantity,
-      price: item.price,
-    })),
+    const orderData = {
+      orderId: generateOrderId(),
+      userId: parseInt(user.UserId, 10),
+      total: totalAmount,
+      address: fullAddress || 'Chưa cung cấp địa chỉ đầy đủ',
+      fullName: shippingInfo.fullName,
+      phone: shippingInfo.phone,
+      email: shippingInfo.email,
+      paymentMethod: paymentMethod === 'cod' ? 'Thanh toán khi nhận hàng' : 'Thanh toán online',
+      estimatedDeliveryDate: getEstimatedDeliveryDate(),
+      items: checkoutItems.map((item) => ({
+        productId: item.id,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+    };
+
+    setIsLoading(true);
+
+    try {
+      setPendingOrder(orderData);
+
+      const orderResponse = await axios.post('http://localhost:5000/api/orders', orderData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!orderResponse.data.success) {
+        throw new Error(orderResponse.data.message || 'Không thể tạo đơn hàng');
+      }
+
+      setOrderId(orderData.orderId);
+
+      if (paymentMethod === 'cod') {
+        if (state?.fromBuyNow) {
+          await axios.delete('http://localhost:5000/api/cart/remove', {
+            headers: { Authorization: `Bearer ${token}` },
+            data: { userId: parseInt(user.UserId, 10), productId: checkoutItems[0].id },
+          });
+        } else {
+          checkoutItems.forEach((item) => removeFromCart(item.id));
+        }
+
+        toast.success(`Đơn hàng ${orderData.orderId} đã được đặt thành công! Email xác nhận đã được gửi đến ${shippingInfo.email}.`, { autoClose: 2000 });
+        setPendingOrder(null);
+        nextStep();
+      } else {
+        const zalopayResponse = await axios.post(
+          'http://localhost:5000/api/zalopay/create-order',
+          {
+            userId: parseInt(user.UserId, 10),
+            total: totalAmount,
+            orderId: orderData.orderId,
+            items: checkoutItems,
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        if (!zalopayResponse.data.success) {
+          throw new Error(zalopayResponse.data.message || 'Không thể tạo đơn hàng ZaloPay');
+        }
+
+        setQrCodeUrl(zalopayResponse.data.orderUrl);
+        setZpTransToken(zalopayResponse.data.zpTransToken); // Lưu zp_trans_token
+        setAppTransId(zalopayResponse.data.appTransId);
+        setStep(3.5);
+
+        // Mở orderUrl trong tab mới để hiển thị trang thanh toán ZaloPay
+        window.open(zalopayResponse.data.orderUrl, '_blank');
+      }
+    } catch (error) {
+      console.error('Error submitting order:', error.response || error);
+      toast.error(`Lỗi khi đặt hàng: ${error.response?.data?.message || error.message}`, { autoClose: 2000 });
+      setOrderId(null);
+      setPendingOrder(null);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  setIsLoading(true);
+  const handleOpenZaloPay = () => {
+    if (zpTransToken) {
+      const zalopayUrl = `zalopay://app?zp_trans_token=${zpTransToken}`;
+      window.location.href = zalopayUrl;
 
-  try {
-    setPendingOrder(orderData);
-
-    const orderResponse = await axios.post('http://localhost:5000/api/orders', orderData, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!orderResponse.data.success) {
-      throw new Error(orderResponse.data.message || 'Không thể tạo đơn hàng');
-    }
-
-    setOrderId(orderData.orderId);
-
-    if (paymentMethod === 'cod') {
-      if (state?.fromBuyNow) {
-        await axios.delete('http://localhost:5000/api/cart/remove', {
-          headers: { Authorization: `Bearer ${token}` },
-          data: { userId: parseInt(user.UserId, 10), productId: checkoutItems[0].id },
-        });
-      } else {
-        checkoutItems.forEach((item) => removeFromCart(item.id));
-      }
-
-      toast.success(`Đơn hàng ${orderData.orderId} đã được đặt thành công! Email xác nhận đã được gửi đến ${shippingInfo.email}.`, { autoClose: 2000 });
-      setPendingOrder(null);
-      nextStep();
+      // Fallback nếu không mở được ứng dụng ZaloPay
+      setTimeout(() => {
+        toast.info('Nếu ứng dụng ZaloPay không mở, vui lòng quét mã QR hoặc cài đặt ZaloPay.', { autoClose: 5000 });
+      }, 2000);
     } else {
-      const zalopayResponse = await axios.post(
-        'http://localhost:5000/api/zalopay/create-order',
-        {
-          userId: parseInt(user.UserId, 10),
-          total: totalAmount,
-          orderId: orderData.orderId,
-          items: checkoutItems,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      if (!zalopayResponse.data.success) {
-        throw new Error(zalopayResponse.data.message || 'Không thể tạo đơn hàng ZaloPay');
-      }
-
-      setQrCodeUrl(zalopayResponse.data.order_url);
-      setAppTransId(zalopayResponse.data.app_trans_id);
-      setStep(3.5);
+      toast.error('Không thể mở ZaloPay. Vui lòng thử lại.', { autoClose: 2000 });
     }
-  } catch (error) {
-    console.error('Error submitting order:', error.response || error);
-    toast.error(`Lỗi khi đặt hàng: ${error.response?.data?.message || error.message}`, { autoClose: 2000 });
-    setOrderId(null);
-    setPendingOrder(null);
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
   const formatDisplayDate = (isoDate) => {
-    const date = toZonedTime(new Date(isoDate), timeZone); // Sử dụng toZonedTime
+    const date = toZonedTime(new Date(isoDate), timeZone);
     return format(date, 'dd/MM/yyyy', { timeZone });
   };
 
@@ -686,22 +709,30 @@ const handleOrderSubmit = async () => {
               <p className="text-gray-600 mb-6">
                 Vui lòng quét mã QR bên dưới hoặc nhấn nút để mở ứng dụng ZaloPay để thanh toán.
               </p>
-              {qrCodeUrl && (
+              {zpTransToken && (
                 <div className="flex justify-center mb-6">
-                  <QRCode value={qrCodeUrl} size={200} />
+                  <QRCode value={`zalopay://app?zp_trans_token=${zpTransToken}`} size={200} />
                 </div>
               )}
               <p className="text-gray-600 mb-6">
                 Tổng tiền: <strong>{totalAmount.toLocaleString('vi-VN')} VND</strong>
               </p>
-              <a
-                href={qrCodeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block py-3 px-6 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all duration-300 font-semibold mb-6"
-              >
-                Mở ZaloPay để thanh toán
-              </a>
+              <div className="flex flex-col gap-4 mb-6">
+                <button
+                  onClick={handleOpenZaloPay}
+                  className="py-3 px-6 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all duration-300 font-semibold"
+                >
+                  Mở ứng dụng ZaloPay
+                </button>
+                <a
+                  href={qrCodeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-3 px-6 bg-gray-300 text-gray-700 rounded-full hover:bg-gray-400 transition-all duration-300 font-semibold"
+                >
+                  Xem trang thanh toán ZaloPay
+                </a>
+              </div>
               {paymentStatus === 'pending' && (
                 <p className="text-gray-600 flex items-center justify-center gap-2">
                   <FaSpinner className="animate-spin" /> Đang chờ thanh toán...

@@ -19,7 +19,7 @@ const verifyAdmin = require('./middleware/verifyAdmin');
 const app = express();
 // Cấu hình CORS
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://364d-2405-4802-c0f3-faa0-8cb0-6540-ac31-5a2c.ngrok-free.app'], // Cho phép cả localhost và ngrok
+  origin: ['http://localhost:3000','https://b767-2405-4802-c0f3-faa0-8cb0-6540-ac31-5a2c.ngrok-free.app'], // Cho phép cả localhost và ngrok
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -100,6 +100,17 @@ passport.deserializeUser(async (id, done) => {
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Backend is running!' });
 });
+
+// Cấu hình ZaloPay với App ID, Key1, Key2 bạn cung cấp
+// Cấu hình ZaloPay
+const ZLP_CONFIG = {
+  app_id: '2553',
+  key1: 'PcY4iZIKFCIdgZvA6ueMcMHHUbRLYjPL',
+  key2: 'kLtgPl8HHhfvMuDHPwKfgfsY4Ydm9eIz',
+  endpoint: 'https://sb-openapi.zalopay.vn/v2/',
+  callback_url: 'https://b767-2405-4802-c0f3-faa0-8cb0-6540-ac31-5a2c.ngrok-free.app/api/zalopay-callback',
+};
+
 // Hàm lấy URL công khai từ ngrok
 async function getNgrokUrl() {
   try {
@@ -113,310 +124,19 @@ async function getNgrokUrl() {
   }
 }
 
-// Cấu hình ZaloPay với App ID, Key1, Key2 bạn cung cấp
-const ZLP_CONFIG = {
-  app_id: '2553', // App ID của bạn
-  key1: 'PcY4iZIKFCIdgZvA6ueMcMHHUbRLYjPL', // Key1 của bạn
-  key2: 'kLtgPl8HHhfvMuDHPwKfgfsY4Ydm9eIz', // Key2 của bạn
-  endpoint: 'https://sb-openapi.zalopay.vn/v2/', // Sandbox endpoint
-  callback_url: 'https://d208-2405-4802-c0f3-faa0-3065-89da-cc32-9253.ngrok-free.app/api/zalopay-callback',
-  };
-
-  (async () => {
-    const ngrokUrl = await getNgrokUrl();
-    if (ngrokUrl) {
-      ZLP_CONFIG.callback_url = `${ngrokUrl}/api/zalopay-callback`;
-      console.log('Updated ZLP_CONFIG.callback_url:', ZLP_CONFIG.callback_url);
-    } else {
-      console.error('Could not fetch ngrok URL. Using fallback callback_url.');
-      ZLP_CONFIG.callback_url = 'http://localhost:5000/api/zalopay-callback'; // Fallback URL (sẽ không hoạt động cho ZaloPay)
-    }
-  })();
-//API Zalopay
-// Endpoint tạo đơn hàng ZaloPay
-app.post('/api/zalopay/create-order', authenticateToken, async (req, res) => {
-  const { userId, total, orderId, items } = req.body;
-
-  try {
-    const transID = Math.floor(Math.random() * 1000000);
-    const appTransID = `${new Date().toISOString().slice(2, 10).replace(/-/g, '')}_${transID}`; // Format: YYMMDD_transID
-
-    const order = {
-      app_id: ZLP_CONFIG.app_id,
-      app_trans_id: appTransID,
-      app_user: userId.toString(),
-      app_time: Date.now(),
-      item: JSON.stringify(items),
-      embed_data: JSON.stringify({ orderId }),
-      amount: total,
-      description: `Thanh toán đơn hàng #${orderId}`,
-      bank_code: 'zalopayapp',
-      callback_url: ZLP_CONFIG.callback_url,
-    };
-
-    const data = [
-      order.app_id,
-      order.app_trans_id,
-      order.app_user,
-      order.amount,
-      order.app_time,
-      order.embed_data,
-      order.item,
-    ].join('|');
-    order.mac = CryptoJS.HmacSHA256(data, ZLP_CONFIG.key1).toString();
-
-    const response = await axios.post(`${ZLP_CONFIG.endpoint}create`, null, { params: order });
-    const result = response.data;
-
-    if (result.return_code !== 1) {
-      return res.status(400).json({ success: false, message: result.return_message });
-    }
-
-    res.json({
-      success: true,
-      order_url: result.order_url,
-      app_trans_id: appTransID,
-    });
-  } catch (err) {
-    console.error('[POST /api/zalopay/create-order] Error:', err.message);
-    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
+// Cập nhật callback_url của ZaloPay với ngrok
+(async () => {
+  const ngrokUrl = await getNgrokUrl();
+  if (ngrokUrl) {
+    ZLP_CONFIG.callback_url = `${ngrokUrl}/api/zalopay-callback`;
+    console.log('Updated ZLP_CONFIG.callback_url:', ZLP_CONFIG.callback_url);
+  } else {
+    console.error('Could not fetch ngrok URL. Using fallback callback_url.');
+    ZLP_CONFIG.callback_url = 'http://localhost:5000/api/zalopay-callback';
   }
-});
+})();
 
-// Endpoint kiểm tra trạng thái thanh toán
-app.post('/api/zalopay/check-status', authenticateToken, async (req, res) => {
-  const { app_trans_id } = req.body;
 
-  console.log('Check status request:', { app_trans_id });
-
-  if (!app_trans_id) {
-    console.error('Check status: Missing app_trans_id');
-    return res.status(400).json({ success: false, message: 'Thiếu app_trans_id' });
-  }
-
-  try {
-    const params = {
-      app_id: ZLP_CONFIG.app_id,
-      app_trans_id,
-    };
-
-    const data = [ZLP_CONFIG.app_id, app_trans_id, ZLP_CONFIG.key1].join('|');
-    params.mac = CryptoJS.HmacSHA256(data, ZLP_CONFIG.key1).toString();
-
-    const response = await axios.post(`${ZLP_CONFIG.endpoint}query`, null, { params });
-    const result = response.data;
-
-    console.log('Check status response:', result);
-
-    if (result.return_code === 1) {
-      // Giao dịch thành công
-      res.json({ success: true, status: 1 });
-    } else if (result.return_code === 0 || result.return_code === 3) {
-      // Giao dịch đang xử lý hoặc chưa được thực hiện
-      res.json({ success: true, status: result.return_code });
-    } else {
-      // Giao dịch thất bại
-      console.error('Check status failed:', result.return_message);
-      res.json({ success: false, status: result.return_code, message: result.return_message });
-    }
-  } catch (err) {
-    console.error('[POST /api/zalopay/check-status] Error:', err.message);
-    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
-  }
-});
-
-// Endpoint xử lý callback từ ZaloPay
-// API xử lý callback từ ZaloPay
-// backend/index.js
-// backend/index.js
-app.post('/api/zalopay-callback', async (req, res) => {
-  const { data, mac } = req.body;
-
-  console.log('[ZaloPay Callback] Received:', { data, mac });
-
-  try {
-    const computedMac = CryptoJS.HmacSHA256(data, ZLP_CONFIG.key2).toString();
-    if (computedMac !== mac) {
-      console.error('[ZaloPay Callback] Invalid mac:', { computedMac, mac });
-      return res.json({ return_code: -1, return_message: 'Chữ ký không hợp lệ' });
-    }
-
-    const dataJson = JSON.parse(data);
-    const { app_trans_id, zp_trans_id } = dataJson;
-    const embedData = JSON.parse(dataJson.embed_data);
-    const orderId = embedData.orderId;
-
-    console.log('[ZaloPay Callback] Parsed data:', { app_trans_id, zp_trans_id, orderId });
-
-    const queryParams = {
-      app_id: ZLP_CONFIG.app_id,
-      app_trans_id,
-    };
-
-    const queryData = [ZLP_CONFIG.app_id, app_trans_id, ZLP_CONFIG.key1].join('|');
-    queryParams.mac = CryptoJS.HmacSHA256(queryData, ZLP_CONFIG.key1).toString();
-
-    const queryResponse = await axios.post(`${ZLP_CONFIG.endpoint}query`, null, { params: queryParams });
-    const queryResult = queryResponse.data;
-
-    console.log('[ZaloPay Callback] Query response:', queryResult);
-
-    const status = queryResult.return_code;
-
-    console.log(`[ZaloPay Callback] Processing for order ${orderId}, status: ${status}`);
-
-    const pool = await poolPromise;
-    const transaction = pool.transaction();
-
-    await transaction.begin();
-
-    try {
-      // Kiểm tra đơn hàng tồn tại
-      const orderCheck = await transaction.request()
-        .input('OrderId', sql.VarChar(50), orderId)
-        .query('SELECT * FROM Orders WHERE OrderId = @OrderId');
-
-      if (orderCheck.recordset.length === 0) {
-        await transaction.rollback();
-        console.error(`[ZaloPay Callback] Order ${orderId} not found`);
-        return res.json({ return_code: -1, return_message: 'Đơn hàng không tồn tại' });
-      }
-
-      const order = orderCheck.recordset[0];
-      const transactionId = zp_trans_id ? zp_trans_id.toString() : `TXN${Date.now()}${Math.floor(Math.random() * 10000)}`;
-
-      if (status === 1) {
-        // Thanh toán thành công
-        const paymentUpdateResult = await transaction.request()
-          .input('OrderId', sql.VarChar(50), orderId)
-          .input('PaymentDate', sql.DateTime, moment().tz('Asia/Ho_Chi_Minh').toDate())
-          .input('TransactionId', sql.VarChar(50), transactionId)
-          .query(`
-            UPDATE Payments
-            SET Status = N'Đã thanh toán', PaymentDate = @PaymentDate, TransactionId = @TransactionId
-            WHERE OrderId = @OrderId
-          `);
-        console.log('[ZaloPay Callback] Payment update result:', paymentUpdateResult);
-
-        if (paymentUpdateResult.rowsAffected[0] === 0) {
-          console.error(`[ZaloPay Callback] No payment record found for OrderId: ${orderId}`);
-        }
-
-        // Lấy danh sách sản phẩm trong đơn hàng để gửi email
-        const itemsResult = await transaction.request()
-          .input('OrderId', sql.VarChar(50), orderId)
-          .query(`
-            SELECT oi.ProductId, oi.Quantity, oi.Price, p.Name
-            FROM OrderItems oi
-            JOIN Products p ON oi.ProductId = p.ProductId
-            WHERE oi.OrderId = @OrderId
-          `);
-        const items = itemsResult.recordset;
-
-        // Commit transaction trước khi gửi email
-        await transaction.commit();
-        console.log('[ZaloPay Callback] Transaction committed successfully for orderId:', orderId);
-
-        // Gửi email thông báo sau khi thanh toán thành công
-        console.log('[ZaloPay Callback] Preparing to send email to:', order.Email);
-        const subject = `Xác Nhận Thanh Toán Đơn Hàng #${orderId} - NeoPlaton Shop`;
-        const htmlContent = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-            <h2 style="color: #4A90E2;">Xác Nhận Thanh Toán Đơn Hàng</h2>
-            <p>Xin chào ${order.FullName || 'Khách hàng'},</p>
-            <p>Thanh toán cho đơn hàng của bạn đã được xác nhận thành công với mã số: <strong>${orderId}</strong>.</p>
-            
-            <h3 style="color: #4A90E2;">Thông Tin Đơn Hàng</h3>
-            <p><strong>Mã đơn hàng:</strong> ${orderId}</p>
-            <p><strong>Ngày đặt hàng:</strong> ${moment(order.OrderDate).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss')}</p>
-            <p><strong>Tổng tiền:</strong> ${order.Total.toLocaleString('vi-VN')} VNĐ</p>
-            <p><strong>Phương thức thanh toán:</strong> ${order.PaymentMethod}</p>
-            <p><strong>Địa chỉ giao hàng:</strong> ${order.Address}</p>
-            <p><strong>Dự kiến giao hàng:</strong> ${
-              order.EstimatedDeliveryDate
-                ? moment(order.EstimatedDeliveryDate).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY')
-                : 'Chưa xác định'
-            }</p>
-            
-            <h3 style="color: #4A90E2;">Chi Tiết Sản Phẩm</h3>
-            <table style="width: 100%; border-collapse: collapse;">
-              <thead>
-                <tr style="background-color: #f5f5f5;">
-                  <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: left;">Sản phẩm</th>
-                  <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: center;">Số lượng</th>
-                  <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: right;">Giá</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${items
-                  .map(
-                    (item) => `
-                      <tr>
-                        <td style="border: 1px solid #e0e0e0; padding: 8px;">${item.Name}</td>
-                        <td style="border: 1px solid #e0e0e0; padding: 8px; text-align: center;">${item.Quantity}</td>
-                        <td style="border: 1px solid #e0e0e0; padding: 8px; text-align: right;">${(item.Price * item.Quantity).toLocaleString('vi-VN')} VNĐ</td>
-                      </tr>
-                    `
-                  )
-                  .join('')}
-              </tbody>
-            </table>
-            
-            <p style="margin-top: 20px;">Chúng tôi sẽ xử lý đơn hàng của bạn sớm nhất có thể. Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ với chúng tôi qua email: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a>.</p>
-            <p>Trân trọng,<br/><strong>NeoPlaton Shop</strong></p>
-          </div>
-        `;
-
-        const emailSent = await sendEmail(order.Email, subject, htmlContent);
-
-        if (!emailSent) {
-          console.warn(`[ZaloPay Callback] Warning: Order ${orderId} payment confirmed, but failed to send email to ${order.Email}`);
-        } else {
-          console.log(`[ZaloPay Callback] Email sent successfully to ${order.Email} for orderId: ${orderId}`);
-        }
-
-        console.log(`[ZaloPay Callback] Thanh toán thành công cho đơn hàng ${orderId}`);
-      } else {
-        // Thanh toán thất bại: Xóa đơn hàng và khôi phục tồn kho
-        const itemsResult = await transaction.request()
-          .input('OrderId', sql.VarChar(50), orderId)
-          .query('SELECT ProductId, Quantity FROM OrderItems WHERE OrderId = @OrderId');
-        const items = itemsResult.recordset;
-
-        for (const item of items) {
-          await transaction.request()
-            .input('ProductId', sql.Int, item.ProductId)
-            .input('Quantity', sql.Int, item.Quantity)
-            .query('UPDATE Products SET Stock = Stock + @Quantity WHERE ProductId = @ProductId');
-        }
-
-        await transaction.request()
-          .input('OrderId', sql.VarChar(50), orderId)
-          .query('DELETE FROM OrderItems WHERE OrderId = @OrderId');
-
-        await transaction.request()
-          .input('OrderId', sql.VarChar(50), orderId)
-          .query('DELETE FROM Payments WHERE OrderId = @OrderId');
-
-        await transaction.request()
-          .input('OrderId', sql.VarChar(50), orderId)
-          .query('DELETE FROM Orders WHERE OrderId = @OrderId');
-
-        await transaction.commit();
-        console.log(`[ZaloPay Callback] Thanh toán thất bại, đơn hàng ${orderId} đã bị xóa`);
-      }
-
-      res.json({ return_code: 1, return_message: 'Xử lý callback thành công' });
-    } catch (err) {
-      await transaction.rollback();
-      console.error('[ZaloPay Callback] Transaction rolled back due to error:', err.message, err.stack);
-      throw err;
-    }
-  } catch (err) {
-    console.error('[ZaloPay Callback] Error:', err.message, err.stack);
-    res.json({ return_code: -1, return_message: `Lỗi server: ${err.message}` });
-  }
-});
 //API Upload avt
 // Cấu hình multer chung
 const createStorage = (destinationPath) => multer.diskStorage({
@@ -724,71 +444,71 @@ app.get('/api/products/:id', async (req, res) => {
 });
 const router = express.Router();
 
-//API Thông báo
-// Định nghĩa các route cho thông báo
-router.get('/notifications', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  console.log(`[${new Date().toISOString()}] Fetching notifications for userId: ${userId}`);
+// //API Thông báo
+// // Định nghĩa các route cho thông báo
+// router.get('/notifications', authenticateToken, async (req, res) => {
+//   const userId = req.user.userId;
+//   console.log(`[${new Date().toISOString()}] Fetching notifications for userId: ${userId}`);
 
-  try {
-    const notifications = await knex('Notifications')
-      .where('UserId', userId)
-      .select('NotificationId', 'Title', 'Message', 'IsRead', 'CreatedAt');
+//   try {
+//     const notifications = await knex('Notifications')
+//       .where('UserId', userId)
+//       .select('NotificationId', 'Title', 'Message', 'IsRead', 'CreatedAt');
 
-    console.log(`[${new Date().toISOString()}] Fetched ${notifications.length} notifications for userId: ${userId}`);
-    res.status(200).json({ success: true, notifications });
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error fetching notifications for userId: ${userId}, Error:`, error.message);
-    res.status(500).json({ success: false, message: 'Lỗi server' });
-  }
-});
-router.get('/notifications', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  console.log(`[${new Date().toISOString()}] Fetching notifications for userId: ${userId}`);
+//     console.log(`[${new Date().toISOString()}] Fetched ${notifications.length} notifications for userId: ${userId}`);
+//     res.status(200).json({ success: true, notifications });
+//   } catch (error) {
+//     console.error(`[${new Date().toISOString()}] Error fetching notifications for userId: ${userId}, Error:`, error.message);
+//     res.status(500).json({ success: false, message: 'Lỗi server' });
+//   }
+// });
+// router.get('/notifications', authenticateToken, async (req, res) => {
+//   const userId = req.user.userId;
+//   console.log(`[${new Date().toISOString()}] Fetching notifications for userId: ${userId}`);
 
-  try {
-    const notifications = await knex('Notifications')
-      .where('UserId', userId)
-      .select('NotificationId', 'Title', 'Message', 'IsRead', 'CreatedAt');
+//   try {
+//     const notifications = await knex('Notifications')
+//       .where('UserId', userId)
+//       .select('NotificationId', 'Title', 'Message', 'IsRead', 'CreatedAt');
 
-    console.log(`[${new Date().toISOString()}] Fetched ${notifications.length} notifications for userId: ${userId}`);
-    res.status(200).json({ success: true, notifications });
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error fetching notifications for userId: ${userId}, Error:`, error.message);
-    res.status(500).json({ success: false, message: 'Lỗi server' });
-  }
-});
+//     console.log(`[${new Date().toISOString()}] Fetched ${notifications.length} notifications for userId: ${userId}`);
+//     res.status(200).json({ success: true, notifications });
+//   } catch (error) {
+//     console.error(`[${new Date().toISOString()}] Error fetching notifications for userId: ${userId}, Error:`, error.message);
+//     res.status(500).json({ success: false, message: 'Lỗi server' });
+//   }
+// });
 
 
-// Đánh dấu thông báo đã đọc
-router.put('/notifications/:id/read', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const notificationId = parseInt(req.params.id);
-  console.log(`[${new Date().toISOString()}] Request received: PUT /api/notifications/${notificationId}/read for userId: ${userId}`);
+// // Đánh dấu thông báo đã đọc
+// router.put('/notifications/:id/read', authenticateToken, async (req, res) => {
+//   const userId = req.user.userId;
+//   const notificationId = parseInt(req.params.id);
+//   console.log(`[${new Date().toISOString()}] Request received: PUT /api/notifications/${notificationId}/read for userId: ${userId}`);
 
-  try {
-    console.log(`[${new Date().toISOString()}] Checking if notification ${notificationId} exists for userId: ${userId}`);
-    const notification = await knex('Notifications')
-      .where({ NotificationId: notificationId, UserId: userId })
-      .first();
+//   try {
+//     console.log(`[${new Date().toISOString()}] Checking if notification ${notificationId} exists for userId: ${userId}`);
+//     const notification = await knex('Notifications')
+//       .where({ NotificationId: notificationId, UserId: userId })
+//       .first();
 
-    if (!notification) {
-      console.log(`[${new Date().toISOString()}] Notification ${notificationId} not found for userId: ${userId}`);
-      return res.status(404).json({ success: false, message: 'Thông báo không tồn tại' });
-    }
+//     if (!notification) {
+//       console.log(`[${new Date().toISOString()}] Notification ${notificationId} not found for userId: ${userId}`);
+//       return res.status(404).json({ success: false, message: 'Thông báo không tồn tại' });
+//     }
 
-    console.log(`[${new Date().toISOString()}] Notification ${notificationId} found, marking as read`);
-    await knex('Notifications')
-      .where({ NotificationId: notificationId })
-      .update({ IsRead: true });
+//     console.log(`[${new Date().toISOString()}] Notification ${notificationId} found, marking as read`);
+//     await knex('Notifications')
+//       .where({ NotificationId: notificationId })
+//       .update({ IsRead: true });
 
-    console.log(`[${new Date().toISOString()}] Successfully marked notification ${notificationId} as read for userId: ${userId}`);
-    res.status(200).json({ success: true, message: 'Đã đánh dấu thông báo là đã đọc' });
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error marking notification ${notificationId} as read for userId: ${userId}, Error:`, error.message, error.stack);
-    res.status(500).json({ success: false, message: 'Lỗi server' });
-  }
-});
+//     console.log(`[${new Date().toISOString()}] Successfully marked notification ${notificationId} as read for userId: ${userId}`);
+//     res.status(200).json({ success: true, message: 'Đã đánh dấu thông báo là đã đọc' });
+//   } catch (error) {
+//     console.error(`[${new Date().toISOString()}] Error marking notification ${notificationId} as read for userId: ${userId}, Error:`, error.message, error.stack);
+//     res.status(500).json({ success: false, message: 'Lỗi server' });
+//   }
+// });
 // Gắn router vào ứng dụng với tiền tố /api
 app.use('/api', router);
 
@@ -1672,8 +1392,7 @@ app.get('/auth/facebook/callback',
     res.redirect(`http://localhost:3000/login?token=${token}`);
   }
 );
-//API tạo đơn hàng
-// API tạo đơn hàng
+// API tạo đơn hàng (Được di chuyển đến đây, ngay sau các API giỏ hàng)
 app.post('/api/orders', authenticateToken, async (req, res) => {
   console.log('[POST /api/orders] Received request body:', req.body);
 
@@ -2358,6 +2077,406 @@ app.get('/api/orders/:orderId', authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: `Lỗi server khi lấy chi tiết đơn hàng: ${err.message}` });
   }
 });
+//API Zalopay
+app.post('/api/zalopay/create-order', async (req, res) => {
+  console.log('[POST /api/zalopay/create-order] Received request:', req.body);
+
+  const { total, orderId } = req.body;
+
+  // Kiểm tra xem total và orderId có được gửi lên không
+  if (!total || !orderId) {
+    console.error('[POST /api/zalopay/create-order] Missing required fields:', { total, orderId });
+    return res.status(400).json({ success: false, message: 'Thiếu thông tin cần thiết (total hoặc orderId)' });
+  }
+
+  // Kiểm tra total có phải là số hợp lệ không
+  if (isNaN(total) || total <= 0) {
+    console.error('[POST /api/zalopay/create-order] Invalid total:', total);
+    return res.status(400).json({ success: false, message: 'Số tiền không hợp lệ' });
+  }
+
+  try {
+    const pool = await poolPromise;
+
+    // Kiểm tra đơn hàng trong bảng Orders
+    console.log('[POST /api/zalopay/create-order] Checking order existence for OrderId:', orderId);
+    const orderCheck = await pool.request()
+      .input('OrderId', sql.VarChar(50), orderId)
+      .query(`
+        SELECT OrderId, Total, Status
+        FROM Orders
+        WHERE OrderId = @OrderId
+      `);
+
+    if (orderCheck.recordset.length === 0) {
+      console.error('[POST /api/zalopay/create-order] Order not found for OrderId:', orderId);
+      return res.status(404).json({ success: false, message: 'Đơn hàng không tồn tại' });
+    }
+
+    const order = orderCheck.recordset[0];
+    console.log('[POST /api/zalopay/create-order] Order found:', order);
+
+    // Kiểm tra trạng thái đơn hàng
+    if (order.Status !== 'Chờ xác nhận') {
+      console.error('[POST /api/zalopay/create-order] Order cannot be processed. Current status:', order.Status);
+      return res.status(400).json({ success: false, message: 'Đơn hàng không ở trạng thái "Chờ xác nhận"' });
+    }
+
+    // Kiểm tra số tiền gửi lên có khớp với tổng đơn hàng không
+    if (Math.abs(order.Total - total) > 0.01) {
+      console.error(
+        '[POST /api/zalopay/create-order] Total mismatch for OrderId:',
+        orderId,
+        'Order Total:',
+        order.Total,
+        'Provided Total:',
+        total
+      );
+      return res.status(400).json({ success: false, message: 'Số tiền không khớp với tổng đơn hàng' });
+    }
+
+    // Cấu hình ZaloPay
+    const config = {
+      app_id: parseInt(process.env.ZALOPAY_APP_ID),
+      key1: process.env.ZALOPAY_KEY1,
+      key2: process.env.ZALOPAY_KEY2,
+      endpoint: process.env.ZALOPAY_ENDPOINT || 'https://sb-openapi.zalopay.vn/v2/create',
+    };
+
+    // Kiểm tra các biến môi trường của ZaloPay
+    if (!config.app_id || !config.key1 || !config.key2) {
+      console.error('[POST /api/zalopay/create-order] Missing ZaloPay configuration:', {
+        app_id: config.app_id,
+        key1: config.key1,
+        key2: config.key2,
+      });
+      return res.status(500).json({ success: false, message: 'Cấu hình ZaloPay không đầy đủ, vui lòng kiểm tra biến môi trường' });
+    }
+
+    const embed_data = {
+      redirecturl: process.env.ZALOPAY_REDIRECT_URL || 'http://localhost:3000/payment-callback',
+      orderId: orderId,
+    };
+
+    const items = [{}];
+    const transID = Math.floor(Math.random() * 1000000);
+    const appTransId = `${moment().format('YYMMDD')}_${transID}`; // Tạo app_trans_id
+
+    const orderData = {
+      app_id: config.app_id,
+      app_trans_id: appTransId,
+      app_user: 'user123',
+      app_time: Date.now(),
+      item: JSON.stringify(items),
+      embed_data: JSON.stringify(embed_data),
+      amount: parseInt(total),
+      description: `NeoPlaton Shop - Thanh toán đơn hàng #${orderId}`,
+      bank_code: 'zalopayapp',
+      callback_url: process.env.ZALOPAY_CALLBACK_URL || 'https://f62c-2405-4802-c0f3-faa0-8cb0-6540-ac31-5a2c.ngrok-free.app/api/zalopay-callback',
+    };
+
+    // Log chi tiết callback_url
+    console.log('[POST /api/zalopay/create-order] Callback URL sent to ZaloPay:', orderData.callback_url);
+
+    // Kiểm tra các trường trong orderData trước khi tạo mac
+    console.log('[POST /api/zalopay/create-order] Order data before creating mac:', orderData);
+    const data = `${orderData.app_id}|${orderData.app_trans_id}|${orderData.app_user}|${orderData.amount}|${orderData.app_time}|${orderData.embed_data}|${orderData.item}`;
+    console.log('[POST /api/zalopay/create-order] Data string for mac:', data);
+
+    // Tạo mac bằng CryptoJS
+    orderData.mac = CryptoJS.HmacSHA256(data, config.key1).toString();
+    console.log('[POST /api/zalopay/create-order] Generated order data for ZaloPay:', orderData);
+
+    // Gửi yêu cầu đến ZaloPay
+    const response = await axios.post(config.endpoint, orderData);
+    const result = response.data;
+    console.log('[POST /api/zalopay/create-order] ZaloPay response:', result);
+
+    if (result.return_code !== 1) {
+      console.error('[POST /api/zalopay/create-order] ZaloPay creation failed:', result);
+      return res.status(500).json({ success: false, message: 'Tạo thanh toán ZaloPay thất bại', error: result });
+    }
+
+    // Cập nhật TransactionId trong bảng Payments
+    console.log('[POST /api/zalopay/create-order] Updating Payments table with TransactionId:', appTransId);
+    await pool.request()
+      .input('OrderId', sql.VarChar(50), orderId)
+      .input('TransactionId', sql.NVarChar(100), appTransId)
+      .query(`
+        UPDATE Payments
+        SET TransactionId = @TransactionId
+        WHERE OrderId = @OrderId
+      `);
+    console.log('[POST /api/zalopay/create-order] Payments table updated successfully');
+
+    res.json({
+      success: true,
+      message: 'Tạo thanh toán ZaloPay thành công',
+      orderUrl: result.order_url,
+      zpTransToken: result.zp_trans_token,
+      appTransId: appTransId,
+    });
+  } catch (err) {
+    console.error('[POST /api/zalopay/create-order] Error:', err.response?.data || err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server khi tạo thanh toán ZaloPay: ${err.message}` });
+  }
+});
+// API kiểm tra trạng thái thanh toán ZaloPay
+app.post('/api/zalopay/check-status', async (req, res) => {
+  const { appTransId } = req.body;
+
+  if (!appTransId) {
+    return res.status(400).json({ success: false, message: 'Thiếu appTransId' });
+  }
+
+  try {
+    const config = {
+      app_id: parseInt(process.env.ZALOPAY_APP_ID),
+      key1: process.env.ZALOPAY_KEY1,
+      key2: process.env.ZALOPAY_KEY2,
+      endpoint: 'https://sb-openapi.zalopay.vn/v2/query',
+    };
+
+    // Kiểm tra cấu hình
+    if (!config.app_id || !config.key1) {
+      console.error('[POST /api/zalopay/check-status] Missing ZaloPay configuration:', {
+        app_id: config.app_id,
+        key1: config.key1,
+      });
+      return res.status(500).json({ success: false, message: 'Cấu hình ZaloPay không đầy đủ' });
+    }
+
+    const data = `${config.app_id}|${appTransId}|${config.key1}`;
+    // Sử dụng CryptoJS
+    const mac = CryptoJS.HmacSHA256(data, config.key1).toString();
+
+    const queryData = {
+      app_id: config.app_id,
+      app_trans_id: appTransId,
+      mac: mac,
+    };
+
+    const response = await axios.post(config.endpoint, queryData);
+    const result = response.data;
+
+    if (result.return_code === 1) {
+      const pool = await poolPromise;
+      const paymentCheck = await pool.request()
+        .input('TransactionId', sql.NVarChar(100), appTransId)
+        .query(`
+          SELECT OrderId
+          FROM Payments
+          WHERE TransactionId = @TransactionId
+        `);
+
+      if (paymentCheck.recordset.length > 0) {
+        const orderId = paymentCheck.recordset[0].OrderId;
+        await pool.request()
+          .input('OrderId', sql.VarChar(50), orderId)
+          .input('Status', sql.NVarChar(50), result.status === 1 ? 'Đã thanh toán' : 'Thất bại')
+          .input('PaymentDate', sql.DateTime, moment().tz('Asia/Ho_Chi_Minh').toDate())
+          .query(`
+            UPDATE Payments
+            SET Status = @Status,
+                PaymentDate = @PaymentDate
+            WHERE OrderId = @OrderId
+          `);
+
+        if (result.status === 1) {
+          await pool.request()
+            .input('OrderId', sql.VarChar(50), orderId)
+            .query(`
+              UPDATE Orders
+              SET Status = N'Đã xác nhận'
+              WHERE OrderId = @OrderId
+            `);
+        }
+      }
+
+      res.json({
+        success: true,
+        message: 'Kiểm tra trạng thái thành công',
+        status: result.status,
+        result: result,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Kiểm tra trạng thái thất bại',
+        error: result,
+      });
+    }
+  } catch (err) {
+    console.error('[POST /api/zalopay/check-status] Error:', err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server khi kiểm tra trạng thái ZaloPay: ${err.message}` });
+  }
+});
+
+// API xử lý callback từ ZaloPay
+app.post('/api/zalopay-callback', async (req, res) => {
+  console.log('[POST /api/zalopay-callback] Callback received:', req.body);
+
+  const { data, mac } = req.body;
+
+  if (!data || !mac) {
+    console.error('[POST /api/zalopay-callback] Missing data or mac:', req.body);
+    return res.status(400).json({ success: false, message: 'Thiếu data hoặc mac' });
+  }
+
+  try {
+    const config = {
+      key2: process.env.ZALOPAY_KEY2,
+    };
+
+    // Kiểm tra cấu hình
+    if (!config.key2) {
+      console.error('[POST /api/zalopay-callback] Missing ZaloPay key2');
+      return res.status(500).json({ success: false, message: 'Cấu hình ZaloPay không đầy đủ' });
+    }
+
+    // Sử dụng CryptoJS
+    const expectedMac = CryptoJS.HmacSHA256(data, config.key2).toString();
+
+    if (expectedMac !== mac) {
+      console.error('[POST /api/zalopay-callback] Invalid MAC:', { expectedMac, receivedMac: mac });
+      return res.status(400).json({ success: false, message: 'MAC không hợp lệ' });
+    }
+
+    const dataObj = JSON.parse(data);
+    const { app_trans_id, status } = dataObj;
+
+    console.log('[POST /api/zalopay-callback] Parsed data:', dataObj);
+
+    const pool = await poolPromise;
+    const paymentCheck = await pool.request()
+      .input('TransactionId', sql.NVarChar(100), app_trans_id)
+      .query(`
+        SELECT OrderId
+        FROM Payments
+        WHERE TransactionId = @TransactionId
+      `);
+
+    if (paymentCheck.recordset.length === 0) {
+      console.error('[POST /api/zalopay-callback] Payment not found for app_trans_id:', app_trans_id);
+      return res.status(404).json({ success: false, message: 'Không tìm thấy thanh toán' });
+    }
+
+    const orderId = paymentCheck.recordset[0].OrderId;
+    console.log('[POST /api/zalopay-callback] Found OrderId:', orderId);
+
+    const orderCheck = await pool.request()
+      .input('OrderId', sql.VarChar(50), orderId)
+      .query(`
+        SELECT Email, FullName, Total, Address, EstimatedDeliveryDate, OrderDate
+        FROM Orders
+        WHERE OrderId = @OrderId
+      `);
+
+    if (orderCheck.recordset.length === 0) {
+      console.error('[POST /api/zalopay-callback] Order not found for OrderId:', orderId);
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng' });
+    }
+
+    const order = orderCheck.recordset[0];
+    console.log('[POST /api/zalopay-callback] Order details:', order);
+
+    await pool.request()
+      .input('OrderId', sql.VarChar(50), orderId)
+      .input('Status', sql.NVarChar(50), status === 1 ? 'Đã thanh toán' : 'Thất bại')
+      .input('PaymentDate', sql.DateTime, moment().tz('Asia/Ho_Chi_Minh').toDate())
+      .query(`
+        UPDATE Payments
+        SET Status = @Status,
+            PaymentDate = @PaymentDate
+        WHERE OrderId = @OrderId
+      `);
+    console.log('[POST /api/zalopay-callback] Payment status updated:', status === 1 ? 'Đã thanh toán' : 'Thất bại');
+
+    if (status === 1) {
+      await pool.request()
+        .input('OrderId', sql.VarChar(50), orderId)
+        .query(`
+          UPDATE Orders
+          SET Status = N'Đã xác nhận'
+          WHERE OrderId = @OrderId
+        `);
+      console.log('[POST /api/zalopay-callback] Order status updated to "Đã xác nhận"');
+
+      const itemsResult = await pool.request()
+        .input('OrderId', sql.VarChar(50), orderId)
+        .query(`
+          SELECT oi.ProductId, oi.Quantity, oi.Price, p.Name
+          FROM OrderItems oi
+          JOIN Products p ON oi.ProductId = p.ProductId
+          WHERE oi.OrderId = @OrderId
+        `);
+
+      const items = itemsResult.recordset;
+      console.log('[POST /api/zalopay-callback] Order items:', items);
+
+      const subject = `Xác Nhận Thanh Toán Đơn Hàng #${orderId} - NeoPlaton Shop`;
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+          <h2 style="color: #4A90E2;">Xác Nhận Thanh Toán Đơn Hàng</h2>
+          <p>Xin chào ${order.FullName || 'Khách hàng'},</p>
+          <p>Chúng tôi đã nhận được thanh toán cho đơn hàng của bạn với mã số: <strong>${orderId}</strong>. Cảm ơn bạn đã mua sắm tại NeoPlaton Shop!</p>
+          
+          <h3 style="color: #4A90E2;">Thông Tin Đơn Hàng</h3>
+          <p><strong>Mã đơn hàng:</strong> ${orderId}</p>
+          <p><strong>Ngày đặt hàng:</strong> ${moment(order.OrderDate).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss')}</p>
+          <p><strong>Tổng tiền:</strong> ${order.Total.toLocaleString('vi-VN')} VNĐ</p>
+          <p><strong>Phương thức thanh toán:</strong> ZaloPay</p>
+          <p><strong>Địa chỉ giao hàng:</strong> ${order.Address}</p>
+          <p><strong>Dự kiến giao hàng:</strong> ${
+            order.EstimatedDeliveryDate
+              ? moment(order.EstimatedDeliveryDate).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY')
+              : 'Chưa xác định'
+          }</p>
+          
+          <h3 style="color: #4A90E2;">Chi Tiết Sản Phẩm</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background-color: #f5f5f5;">
+                <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: left;">Sản phẩm</th>
+                <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: center;">Số lượng</th>
+                <th style="border: 1px solid #e0e0e0; padding: 8px; text-align: right;">Giá</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items
+                .map(
+                  (item) => `
+                    <tr>
+                      <td style="border: 1px solid #e0e0e0; padding: 8px;">${item.Name}</td>
+                      <td style="border: 1px solid #e0e0e0; padding: 8px; text-align: center;">${item.Quantity}</td>
+                      <td style="border: 1px solid #e0e0e0; padding: 8px; text-align: right;">${(item.Price * item.Quantity).toLocaleString('vi-VN')} VNĐ</td>
+                    </tr>
+                  `
+                )
+                .join('')}
+            </tbody>
+          </table>
+          
+          <p style="margin-top: 20px;">Chúng tôi sẽ xử lý và giao hàng sớm nhất có thể. Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ với chúng tôi qua email: <a href="mailto:${process.env.EMAIL_USER}">${process.env.EMAIL_USER}</a>.</p>
+          <p>Trân trọng,<br/><strong>NeoPlaton Shop</strong></p>
+        </div>
+      `;
+
+      const emailSent = await sendEmail(order.Email, subject, htmlContent);
+      if (!emailSent) {
+        console.warn(`[POST /api/zalopay-callback] Warning: Payment processed for Order ${orderId}, but failed to send email to ${order.Email}`);
+      } else {
+        console.log(`[POST /api/zalopay-callback] Email sent successfully to ${order.Email} for OrderId: ${orderId}`);
+      }
+    }
+
+    res.json({ success: true, message: 'Callback xử lý thành công', return_code: 1 });
+  } catch (err) {
+    console.error('[POST /api/zalopay-callback] Error:', err.message, err.stack);
+    res.status(500).json({ success: false, message: `Lỗi server khi xử lý callback ZaloPay: ${err.message}`, return_code: -1 });
+  }
+});
+
 
 // API lấy sản phẩm hot
 app.get('/api/hot-products', async (req, res) => {
@@ -3462,21 +3581,20 @@ app.delete('/api/admin/brands/:id', authenticateToken, async (req, res) => {
   }
 });
 // API lấy danh sách đơn hàng
+// API lấy danh sách đơn hàng
 app.get('/api/admin/orders', authenticateToken, async (req, res) => {
   try {
     console.log(`Bắt đầu tìm kiếm đơn hàng, User: ${req.user?.UserId}`);
 
-    // Kiểm tra quyền truy cập
     if (req.user.Role !== 'Admin') {
       console.log(`Người dùng ${req.user.UserId} không có quyền truy cập. Role: ${req.user.Role}`);
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập' });
     }
 
-    // Lấy các tham số từ query
-    const { search = '', orderStatus = '', paymentStatus = '', page = 1, limit = 10 } = req.query;
+    const { search = '', orderStatus = '', paymentStatus = '', page = 1, limit = 10, sort = 'newest' } = req.query;
     const offset = (page - 1) * limit;
 
-    console.log(`Tham số tìm kiếm: search=${search}, orderStatus=${orderStatus}, paymentStatus=${paymentStatus}, page=${page}, limit=${limit}`);
+    console.log(`Tham số tìm kiếm: search=${search}, orderStatus=${orderStatus}, paymentStatus=${paymentStatus}, page=${page}, limit=${limit}, sort=${sort}`);
 
     const pool = await poolPromise;
     console.log('Kết nối database thành công');
@@ -3502,11 +3620,11 @@ app.get('/api/admin/orders', authenticateToken, async (req, res) => {
       countQuery += ` AND (o.OrderId LIKE @search OR o.FullName LIKE @search)`;
       request.input('search', sql.NVarChar, `%${search}%`);
     }
-    if (orderStatus) {
+    if (orderStatus && orderStatus !== 'all') {
       countQuery += ` AND o.Status = @orderStatus`;
       request.input('orderStatus', sql.NVarChar, orderStatus);
     }
-    if (paymentStatus) {
+    if (paymentStatus && paymentStatus !== 'all') {
       countQuery += ` AND p.Status = @paymentStatus`;
       request.input('paymentStatus', sql.NVarChar, paymentStatus);
     }
@@ -3518,7 +3636,14 @@ app.get('/api/admin/orders', authenticateToken, async (req, res) => {
 
     // Lấy danh sách đơn hàng
     let query = `
-      SELECT o.*, p.Status as PaymentStatus
+      SELECT 
+        o.OrderId,
+        o.FullName,
+        o.OrderDate,
+        o.Status,
+        o.Total,
+        p.Status as PaymentStatus,
+        (SELECT COUNT(*) FROM OrderItems oi WHERE oi.OrderId = o.OrderId) as ProductCount
       FROM Orders o
       LEFT JOIN (
         SELECT OrderId, Status
@@ -3534,14 +3659,25 @@ app.get('/api/admin/orders', authenticateToken, async (req, res) => {
     if (search) {
       query += ` AND (o.OrderId LIKE @search OR o.FullName LIKE @search)`;
     }
-    if (orderStatus) {
+    if (orderStatus && orderStatus !== 'all') {
       query += ` AND o.Status = @orderStatus`;
     }
-    if (paymentStatus) {
+    if (paymentStatus && paymentStatus !== 'all') {
       query += ` AND p.Status = @paymentStatus`;
     }
+
+    // Sắp xếp
+    if (sort === 'newest') {
+      query += ` ORDER BY o.CreatedAt DESC`;
+    } else if (sort === 'oldest') {
+      query += ` ORDER BY o.CreatedAt ASC`;
+    } else if (sort === 'highestAmount') {
+      query += ` ORDER BY o.Total DESC`;
+    } else if (sort === 'lowestAmount') {
+      query += ` ORDER BY o.Total ASC`;
+    }
+
     query += `
-      ORDER BY o.CreatedAt DESC
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
     `;
 
@@ -4358,11 +4494,22 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
     const pool = await poolPromise;
     const request = pool.request();
 
-    // 1. Tổng doanh thu (tổng tiền từ các đơn hàng đã hoàn thành)
+    // 1. Tổng doanh thu (dựa trên OrderItems.Price * OrderItems.Quantity, với điều kiện 'Đã giao' và 'Đã thanh toán')
     const revenueQuery = `
-      SELECT SUM(Total) as totalRevenue
-      FROM Orders
-      WHERE Status = 'Hoàn thành'
+      SELECT SUM(oi.Price * oi.Quantity) as totalRevenue
+      FROM OrderItems oi
+      JOIN Orders o ON oi.OrderId = o.OrderId
+      JOIN (
+        SELECT OrderId, Status
+        FROM Payments p1
+        WHERE p1.CreatedAt = (
+          SELECT MAX(p2.CreatedAt)
+          FROM Payments p2
+          WHERE p2.OrderId = p1.OrderId
+        )
+      ) pay ON o.OrderId = pay.OrderId
+      WHERE o.Status = 'Đã giao'
+        AND pay.Status = 'Đã thanh toán'
     `;
     const revenueResult = await request.query(revenueQuery);
     const totalRevenue = revenueResult.recordset[0].totalRevenue || 0;
@@ -4392,16 +4539,27 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
     const customersResult = await request.query(customersQuery);
     const totalCustomers = customersResult.recordset[0].totalCustomers || 0;
 
-    // 5. Doanh thu theo tháng (12 tháng gần nhất)
+    // 5. Doanh thu theo tháng (dựa trên OrderItems.Price * OrderItems.Quantity, 12 tháng gần nhất, áp dụng điều kiện 'Đã giao' và 'Đã thanh toán')
     const salesByMonthQuery = `
       SELECT 
-        MONTH(OrderDate) as month,
-        SUM(Total) as value
-      FROM Orders
-      WHERE OrderDate >= DATEADD(MONTH, -12, GETDATE())
-        AND Status = 'Hoàn thành'
-      GROUP BY MONTH(OrderDate)
-      ORDER BY MONTH(OrderDate)
+        MONTH(o.OrderDate) as month,
+        SUM(oi.Price * oi.Quantity) as value
+      FROM OrderItems oi
+      JOIN Orders o ON oi.OrderId = o.OrderId
+      JOIN (
+        SELECT OrderId, Status
+        FROM Payments p1
+        WHERE p1.CreatedAt = (
+          SELECT MAX(p2.CreatedAt)
+          FROM Payments p2
+          WHERE p2.OrderId = p1.OrderId
+        )
+      ) pay ON o.OrderId = pay.OrderId
+      WHERE o.OrderDate >= DATEADD(MONTH, -12, GETDATE())
+        AND o.Status = 'Đã giao'
+        AND pay.Status = 'Đã thanh toán'
+      GROUP BY MONTH(o.OrderDate)
+      ORDER BY MONTH(o.OrderDate)
     `;
     const salesByMonthResult = await request.query(salesByMonthQuery);
     const salesData = Array.from({ length: 12 }, (_, i) => ({
@@ -4424,30 +4582,51 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
     const productCategoryResult = await request.query(productCategoryQuery);
     const productCategoryData = productCategoryResult.recordset;
 
-    // 7. Sản phẩm bán chạy (Top 5 sản phẩm có số lượng bán cao nhất)
+    // 7. Sản phẩm bán chạy (Top 5 sản phẩm có số lượng bán cao nhất, áp dụng điều kiện 'Đã giao' và 'Đã thanh toán')
     const topProductsQuery = `
       SELECT TOP 5
-        p.ProductId as id,
-        p.Name as name,
+        prod.ProductId as id,
+        prod.Name as name,
         SUM(oi.Quantity) as sales,
-        p.Stock as stock
-      FROM Products p
-      JOIN OrderItems oi ON p.ProductId = oi.ProductId
+        prod.Stock as stock
+      FROM Products prod
+      JOIN OrderItems oi ON prod.ProductId = oi.ProductId
       JOIN Orders o ON oi.OrderId = o.OrderId
-      WHERE o.Status = 'Hoàn thành'
-      GROUP BY p.ProductId, p.Name, p.Stock
+      JOIN (
+        SELECT OrderId, Status
+        FROM Payments p1
+        WHERE p1.CreatedAt = (
+          SELECT MAX(p2.CreatedAt)
+          FROM Payments p2
+          WHERE p2.OrderId = p1.OrderId
+        )
+      ) pay ON o.OrderId = pay.OrderId
+      WHERE o.Status = 'Đã giao'
+        AND pay.Status = 'Đã thanh toán'
+      GROUP BY prod.ProductId, prod.Name, prod.Stock
       ORDER BY SUM(oi.Quantity) DESC
     `;
     const topProductsResult = await request.query(topProductsQuery);
     const topProducts = topProductsResult.recordset;
 
-    // 8. So sánh doanh thu với tháng trước
+    // 8. So sánh doanh thu với tháng trước (dựa trên OrderItems.Price * OrderItems.Quantity, áp dụng điều kiện 'Đã giao' và 'Đã thanh toán')
     const revenueComparisonQuery = `
       SELECT 
-        SUM(CASE WHEN MONTH(OrderDate) = MONTH(GETDATE()) AND YEAR(OrderDate) = YEAR(GETDATE()) THEN Total ELSE 0 END) as currentMonth,
-        SUM(CASE WHEN MONTH(OrderDate) = MONTH(DATEADD(MONTH, -1, GETDATE())) AND YEAR(OrderDate) = YEAR(DATEADD(MONTH, -1, GETDATE())) THEN Total ELSE 0 END) as lastMonth
-      FROM Orders
-      WHERE Status = 'Hoàn thành'
+        SUM(CASE WHEN MONTH(o.OrderDate) = MONTH(GETDATE()) AND YEAR(o.OrderDate) = YEAR(GETDATE()) THEN oi.Price * oi.Quantity ELSE 0 END) as currentMonth,
+        SUM(CASE WHEN MONTH(o.OrderDate) = MONTH(DATEADD(MONTH, -1, GETDATE())) AND YEAR(o.OrderDate) = YEAR(DATEADD(MONTH, -1, GETDATE())) THEN oi.Price * oi.Quantity ELSE 0 END) as lastMonth
+      FROM OrderItems oi
+      JOIN Orders o ON oi.OrderId = o.OrderId
+      JOIN (
+        SELECT OrderId, Status
+        FROM Payments p1
+        WHERE p1.CreatedAt = (
+          SELECT MAX(p2.CreatedAt)
+          FROM Payments p2
+          WHERE p2.OrderId = p1.OrderId
+        )
+      ) pay ON o.OrderId = pay.OrderId
+      WHERE o.Status = 'Đã giao'
+        AND pay.Status = 'Đã thanh toán'
     `;
     const revenueComparisonResult = await request.query(revenueComparisonQuery);
     const { currentMonth, lastMonth } = revenueComparisonResult.recordset[0];

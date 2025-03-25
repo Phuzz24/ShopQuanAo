@@ -52,14 +52,16 @@ const CartSlidebar = ({ showCart, toggleCart }) => {
               <div className="flex items-center">
                 <img
                   src={product.image}
-                  alt={product.name}
+                  alt={product.Name}
                   className="w-16 h-16 object-cover rounded-md mr-4"
                 />
                 <div>
-                  <p className="font-medium">{product.name}</p>
-                  <p className="text-sm text-gray-600">{product.category}</p>
+                  <p className="font-medium">{product.Name}</p>
                   <p className="text-sm text-gray-700">
-                    {product.discountedPrice !== undefined && product.discountedPrice !== null ? (
+                    {product.discountedPrice !== undefined && 
+                     product.discountedPrice !== null && 
+                     product.discountedPrice !== product.price ? (
+                      // Hiển thị cả giá giảm và giá gốc nếu có giảm giá
                       <>
                         {(product.discountedPrice).toLocaleString('vi-VN')} VND
                         <span className="line-through text-gray-500 ml-2">
@@ -70,6 +72,7 @@ const CartSlidebar = ({ showCart, toggleCart }) => {
                         )}
                       </>
                     ) : (
+                      // Chỉ hiển thị giá gốc nếu không có giảm giá
                       `${(product.price || 0).toLocaleString('vi-VN')} VND`
                     )}
                   </p>
