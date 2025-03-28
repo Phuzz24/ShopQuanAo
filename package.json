@@ -70,6 +70,8 @@
     "recharts": "^2.15.1",
     "shadcn-ui": "^0.9.5",
     "slick-carousel": "^1.8.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "sonner": "^2.0.1",
     "sooner": "^1.1.4",
     "sweetalert2": "^11.17.2",

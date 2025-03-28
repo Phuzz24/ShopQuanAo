@@ -1,4 +1,4 @@
-import { Bell, Search, Sun, Moon, LogOut } from "lucide-react";
+import { Bell, Search, Sun, Moon, LogOut, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { useState, useEffect, useCallback } from 'react';
@@ -7,6 +7,12 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatDistanceToNow } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import io from 'socket.io-client';
+
+const socket = io('http://localhost:5000', { // URL backend của bạn
+  reconnection: true,
+  reconnectionAttempts: 5,
+});
 
 const AdminHeader = () => {
   const { user, token, logout } = useUser();
@@ -62,6 +68,29 @@ const AdminHeader = () => {
       fetchNotificationList();
     }
   }, [token, showNotifications, fetchNotificationList]);
+
+  // Lắng nghe thông báo real-time từ Socket.io
+  useEffect(() => {
+    socket.on('adminNotification', (notification) => {
+      console.log('[Socket.io] Received notification:', notification);
+      setNotifications((prev) => prev + 1);
+      setNotificationList((prev) => [
+        {
+          NotificationId: Date.now(), // ID tạm thời cho thông báo real-time
+          Title: notification.title,
+          Message: notification.message,
+          CreatedAt: notification.createdAt,
+          IsRead: 0,
+          Type: notification.type,
+        },
+        ...prev,
+      ]);
+    });
+
+    return () => {
+      socket.off('adminNotification');
+    };
+  }, []);
 
   const markAsRead = useCallback(async (notificationId) => {
     try {

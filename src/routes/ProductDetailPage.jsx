@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FaShoppingCart, FaStar, FaInfoCircle, FaArrowLeft, FaSpinner, FaTag, FaSearch, FaShareAlt, FaHeart } from 'react-icons/fa';
+import { FaShoppingCart, FaStar, FaInfoCircle, FaArrowLeft, FaSpinner, FaTag, FaSearch, FaShareAlt, FaHeart, FaReply } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '../context/CartContext';
 import { useUser } from '../context/UserContext';
@@ -27,6 +27,7 @@ const ProductDetailPage = () => {
   const [relatedProducts, setRelatedProducts] = useState([]);
   const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [replyText, setReplyText] = useState({}); // Lưu trữ nội dung phản hồi cho từng đánh giá
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -258,6 +259,7 @@ const ProductDetailPage = () => {
         rating: selectedRating,
         comment: newComment,
         createdAt: moment().tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss'),
+        replies: [],
       };
       setReviews([newReview, ...reviews]);
       setNewComment('');
@@ -269,6 +271,79 @@ const ProductDetailPage = () => {
     }
   };
 
+  const handleAddReply = async (reviewId) => {
+    if (!token) {
+      toast.error('Vui lòng đăng nhập để trả lời!', { autoClose: 2000 });
+      navigate('/login');
+      return;
+    }
+  
+    const text = replyText[reviewId]?.trim();
+    if (!text) {
+      toast.error('Vui lòng nhập nội dung trả lời!', { autoClose: 2000 });
+      return;
+    }
+  
+    try {
+      const response = await fetch('http://localhost:5000/api/reviews/reply', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          reviewId,
+          replyText: text,
+        }),
+      });
+  
+      // Kiểm tra Content-Type của phản hồi
+      const contentType = response.headers.get('Content-Type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await response.text();
+        console.error('Non-JSON response:', textResponse);
+        throw new Error('Phản hồi từ server không phải JSON');
+      }
+  
+      const data = await response.json();
+  
+      if (response.status === 401 || response.status === 403) {
+        toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!', { autoClose: 2000 });
+        navigate('/login');
+        return;
+      }
+  
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Không thể gửi phản hồi');
+      }
+  
+      const updatedReviews = reviews.map(review => {
+        if (review.reviewId === reviewId) {
+          return {
+            ...review,
+            replies: [
+              ...review.replies,
+              {
+                replyId: data.replyId,
+                userId: user.UserId,
+                username: user.Username,
+                replyText: text,
+                createdAt: moment().tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss'),
+              },
+            ],
+          };
+        }
+        return review;
+      });
+  
+      setReviews(updatedReviews);
+      setReplyText({ ...replyText, [reviewId]: '' });
+      toast.success('Phản hồi đã được gửi!', { autoClose: 2000 });
+    } catch (error) {
+      console.error('Error adding reply:', error);
+      toast.error(error.message, { autoClose: 2000 });
+    }
+  };
   const handleSearch = () => {
     if (!searchQuery.trim()) {
       toast.error('Vui lòng nhập từ khóa tìm kiếm!', { autoClose: 2000 });
@@ -612,18 +687,71 @@ const ProductDetailPage = () => {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.1 }}
-                      className="bg-white p-4 rounded-lg shadow-md flex items-start gap-4"
+                      className="bg-white p-4 rounded-lg shadow-md"
                     >
-                      <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">
-                        {review.username[0]}
-                      </div>
-                      <div>
-                        <p className="text-lg font-medium text-gray-800">{review.username}</p>
-                        <p className="text-sm text-yellow-500 flex items-center gap-1">
-                          {Array(review.rating).fill(<FaStar />)}
-                        </p>
-                        <p className="text-gray-700 mt-2">{review.comment}</p>
-                        <p className="text-sm text-gray-500 mt-1">{review.createdAt}</p>
+                      <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">
+                          {review.username[0]}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="text-lg font-medium text-gray-800">{review.username}</p>
+                              <p className="text-sm text-yellow-500 flex items-center gap-1">
+                                {Array(review.rating).fill(<FaStar />)}
+                              </p>
+                            </div>
+                            <p className="text-sm text-gray-500">{review.createdAt}</p>
+                          </div>
+                          <p className="text-gray-700 mt-2">{review.comment}</p>
+
+                          {/* Hiển thị các phản hồi */}
+                          {review.replies && review.replies.length > 0 && (
+  <div className="mt-4 pl-6 border-l-2 border-gray-200">
+    {review.replies.map(reply => {
+      console.log(`[ProductDetailPage] Displaying reply: replyId=${reply.replyId}, userId=${reply.userId}, role=${reply.role}, currentUserId=${user?.UserId}, currentUserRole=${user?.Role}`);
+      return (
+        <div key={reply.replyId} className="mt-2">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-bold">
+              {reply.username[0]}
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-800">
+                {reply.username}
+                {reply.userId === user?.UserId ? (
+                  <span className="text-xs text-gray-500"> (Bạn)</span>
+                ) : reply.role === 'Admin' ? (
+                  <span className="text-xs text-gray-500"> (Quản lý)</span>
+                ) : null}
+              </p>
+              <p className="text-gray-700">{reply.replyText}</p>
+              <p className="text-xs text-gray-500">{reply.createdAt}</p>
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+)}
+                          {/* Form trả lời */}
+                          <div className="mt-4 flex items-center gap-3">
+                            <textarea
+                              value={replyText[review.reviewId] || ''}
+                              onChange={(e) => setReplyText({ ...replyText, [review.reviewId]: e.target.value })}
+                              placeholder="Viết phản hồi của bạn..."
+                              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <motion.button
+                              onClick={() => handleAddReply(review.reviewId)}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-300 flex items-center gap-2"
+                            >
+                              <FaReply /> Gửi
+                            </motion.button>
+                          </div>
+                        </div>
                       </div>
                     </motion.div>
                   ))

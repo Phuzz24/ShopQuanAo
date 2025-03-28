@@ -59,7 +59,7 @@ const getStatusClass = (status) => {
 };
 
 // Component con để tối ưu render bảng
-const UserRow = React.memo(({ user, handleEditUser, handleDeleteUser }) => {
+const UserRow = React.memo(({ user, handleEditUser, setUserToDelete, setIsDeleteModalOpen }) => {
   return (
     <tr className="border-b transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-800">
       <td className="p-4 text-gray-700 dark:text-gray-300">{user.Id}</td>
@@ -93,7 +93,10 @@ const UserRow = React.memo(({ user, handleEditUser, handleDeleteUser }) => {
             variant="ghost"
             size="icon"
             className="h-9 w-9 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-            onClick={() => handleDeleteUser(user.Id)}
+            onClick={() => {
+              setUserToDelete(user); // Đặt người dùng cần xóa
+              setIsDeleteModalOpen(true); // Mở modal
+            }}
           >
             <Trash2 className="h-5 w-5" />
           </Button>
@@ -116,6 +119,8 @@ const Users = () => {
   // State quản lý modal và dữ liệu người dùng
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+const [userToDelete, setUserToDelete] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [newUser, setNewUser] = useState({
     fullName: "",
@@ -152,6 +157,7 @@ const Users = () => {
     debouncedSetSearch(e.target.value);
     setPage(1);
   };
+  
 
   // Hàm lấy danh sách người dùng
   const fetchUsers = async () => {
@@ -296,17 +302,12 @@ const Users = () => {
 
   // Hàm xóa người dùng
   const handleDeleteUser = async (userId) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa người dùng này?")) {
-      return;
-    }
-
     const token = localStorage.getItem("token");
     if (!token) {
       toast.error("Vui lòng đăng nhập để tiếp tục.");
       navigate("/login");
       return;
     }
-
     try {
       const response = await axios.delete(`http://localhost:5000/api/admin/users/${userId}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -406,11 +407,12 @@ const Users = () => {
                 ) : (
                   users.map((user) => (
                     <UserRow
-                      key={user.Id}
-                      user={user}
-                      handleEditUser={handleEditUser}
-                      handleDeleteUser={handleDeleteUser}
-                    />
+                    key={user.Id}
+                    user={user}
+                    handleEditUser={handleEditUser}
+                    setUserToDelete={setUserToDelete} // Truyền hàm setUserToDelete
+                    setIsDeleteModalOpen={setIsDeleteModalOpen} // Truyền hàm setIsDeleteModalOpen
+                  />
                   ))
                 )}
               </tbody>
@@ -650,6 +652,37 @@ const Users = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+  <DialogContent className="sm:max-w-[425px] bg-white dark:bg-gray-800 rounded-xl shadow-2xl">
+    <DialogHeader>
+      <DialogTitle className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+        Xác nhận xóa người dùng
+      </DialogTitle>
+    </DialogHeader>
+    <p className="text-gray-700 dark:text-gray-300">
+      Bạn có chắc chắn muốn xóa người dùng <strong>{userToDelete?.Name}</strong> không? Hành động này không thể hoàn tác.
+    </p>
+    <DialogFooter>
+      <Button
+        variant="outline"
+        className="rounded-lg border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+        onClick={() => setIsDeleteModalOpen(false)}
+      >
+        Hủy
+      </Button>
+      <Button
+        variant="destructive"
+        className="rounded-lg bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 shadow-lg transform hover:scale-105 transition-all duration-300"
+        onClick={() => {
+          handleDeleteUser(userToDelete.Id); // Gọi hàm xóa
+          setIsDeleteModalOpen(false); // Đóng modal
+        }}
+      >
+        Xóa
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
     </div>
   );
 };

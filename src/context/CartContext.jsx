@@ -15,7 +15,7 @@ export const CartProvider = ({ children }) => {
       console.log('No token or UserId, skipping fetchCartFromDB');
       return;
     }
-  
+
     try {
       const response = await fetch(`http://localhost:5000/api/cart?userId=${user.UserId}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -44,8 +44,11 @@ export const CartProvider = ({ children }) => {
       toast.error('Không thể tải giỏ hàng từ server!', { autoClose: 2000 });
     }
   };
+
   useEffect(() => {
-    fetchCartFromDB();
+    if (cart.length > 0) { // Chỉ gọi fetchCartFromDB nếu giỏ hàng không trống
+      fetchCartFromDB();
+    }
   }, [token, user]);
 
   const addToCart = async (product) => {
@@ -55,7 +58,7 @@ export const CartProvider = ({ children }) => {
       toast.error('Thông tin sản phẩm không hợp lệ!', { autoClose: 2000 });
       return;
     }
-  
+
     const productName = product.Name || product.name || 'Sản phẩm không xác định';
     const prevCart = [...cart];
     setCart((prevCart) => {
@@ -71,15 +74,15 @@ export const CartProvider = ({ children }) => {
       }
     });
     toast.success(`${product.quantity} ${productName} đã được thêm vào giỏ hàng!`, { autoClose: 2000 });
-  
+
     if (token && user?.UserId) {
       try {
         const parsedUserId = parseInt(user.UserId, 10);
         if (isNaN(parsedUserId)) throw new Error('UserId không hợp lệ');
-  
+
         const existingProduct = cart.find((item) => item.id === product.id);
         const newQuantity = existingProduct ? existingProduct.quantity + product.quantity : product.quantity;
-  
+
         const response = await fetch('http://localhost:5000/api/cart/add', {
           method: 'POST',
           headers: {
@@ -90,10 +93,10 @@ export const CartProvider = ({ children }) => {
             userId: parsedUserId,
             productId: product.id,
             quantity: newQuantity,
-            discountCode: product.appliedDiscountCode || undefined, // Gửi discountCode
+            discountCode: product.appliedDiscountCode || undefined,
           }),
         });
-  
+
         const data = await response.json();
         console.log('Add API response:', data);
         if (!data.success) {
@@ -110,24 +113,28 @@ export const CartProvider = ({ children }) => {
     }
   };
 
-  const removeFromCart = async (productId) => {
+  const removeFromCart = async (productId, showToast = true) => {
     console.log('Removing product:', productId);
     const product = cart.find((item) => item.id === productId);
     if (!product) {
-      toast.error('Không tìm thấy sản phẩm để xóa!', { autoClose: 2000 });
+      if (showToast) {
+        toast.error('Không tìm thấy sản phẩm để xóa!', { autoClose: 2000 });
+      }
       return;
     }
-  
+
     const productName = product.name || product.Name || 'Sản phẩm không xác định';
     const prevCart = [...cart];
     setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
-    toast.success(`${productName} đã được xóa khỏi giỏ hàng!`, { autoClose: 2000 });
-  
+    if (showToast) {
+      toast.success(`${productName} đã được xóa khỏi giỏ hàng!`, { autoClose: 2000 });
+    }
+
     if (token && user?.UserId) {
       try {
         const parsedUserId = parseInt(user.UserId, 10);
         if (isNaN(parsedUserId)) throw new Error('UserId không hợp lệ');
-  
+
         const response = await fetch('http://localhost:5000/api/cart/remove', {
           method: 'DELETE',
           headers: {
@@ -139,13 +146,14 @@ export const CartProvider = ({ children }) => {
             productId,
           }),
         });
-  
+
         const data = await response.json();
         console.log('Remove API response:', data);
         if (!data.success) {
           setCart(prevCart);
-          toast.error(`Không thể xóa ${productName} khỏi giỏ hàng trên server: ${data.message}`, { autoClose: 2000 });
-          await fetchCartFromDB();
+          if (showToast) {
+            toast.error(`Không thể xóa ${productName} khỏi giỏ hàng trên server: ${data.message}`, { autoClose: 2000 });
+          }
         } else {
           // Đồng bộ giỏ hàng từ server sau khi xóa thành công
           setCart(data.cart);
@@ -153,8 +161,9 @@ export const CartProvider = ({ children }) => {
       } catch (err) {
         setCart(prevCart);
         console.error('Error removing from cart DB:', err);
-        toast.error(`Lỗi khi xóa ${productName} khỏi giỏ hàng trên server: ${err.message}`, { autoClose: 2000 });
-        await fetchCartFromDB();
+        if (showToast) {
+          toast.error(`Lỗi khi xóa ${productName} khỏi giỏ hàng trên server: ${err.message}`, { autoClose: 2000 });
+        }
       }
     }
   };

@@ -13,10 +13,24 @@ const path = require('path');
 const fs = require('fs');
 const sendEmail = require('./utils/sendEmail'); // Thêm dòng này vào phần import
 const moment = require('moment-timezone');
+const nodemailer = require('nodemailer'); 
 const { poolPromise } = require('./db');
 require('dotenv').config();
 const verifyAdmin = require('./middleware/verifyAdmin'); 
+const router = express.Router();
+const http = require('http');
+const { Server } = require('socket.io');
 const app = express();
+
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: ['http://localhost:3000', 'https://b767-2405-4802-c0f3-faa0-8cb0-6540-ac31-5a2c.ngrok-free.app'],
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
 // Cấu hình CORS
 app.use(cors({
   origin: ['http://localhost:3000','https://b767-2405-4802-c0f3-faa0-8cb0-6540-ac31-5a2c.ngrok-free.app'], // Cho phép cả localhost và ngrok
@@ -95,7 +109,240 @@ passport.deserializeUser(async (id, done) => {
     done(err, null);
   }
 });
+// Cấu hình Nodemailer
+const transporter = nodemailer.createTransport({
+  service: 'Gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
+// Hàm gửi mã xác nhận qua email
+const sendVerificationCode = async (email, code) => {
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Mã xác nhận khôi phục mật khẩu',
+    html: `
+      <h2>Khôi phục mật khẩu</h2>
+      <p>Mã xác nhận của bạn là: <strong>${code}</strong></p>
+      <p>Mã này có hiệu lực trong 10 phút.</p>
+    `,
+  };
+  await transporter.sendMail(mailOptions);
+};
+
+// Hàm gửi thông báo cho admin
+const notifyAdmin = async (title, message) => {
+  try {
+    const pool = await poolPromise;
+    const adminResult = await pool.request()
+      .query("SELECT UserId FROM Users WHERE Role = 'Admin'");
+    
+    const admins = adminResult.recordset;
+    if (admins.length > 0) {
+      for (const admin of admins) {
+        await pool.request()
+          .input('UserId', sql.Int, admin.UserId)
+          .input('Title', sql.NVarChar, title)
+          .input('Message', sql.NVarChar, message)
+          .query(`
+            INSERT INTO Notifications (UserId, Title, Message, CreatedAt)
+            VALUES (@UserId, @Title, @Message, GETDATE())
+          `);
+      }
+      io.emit('adminNotification', {
+        title,
+        message,
+        createdAt: moment().tz('Asia/Ho_Chi_Minh').toDate(),
+        type: title.includes('hết hàng') ? 'Stock' : 'Order',
+      });
+      console.log('[notifyAdmin] Notification sent:', { title, message });
+    }
+  } catch (err) {
+    console.error('[notifyAdmin] Error:', err.message);
+  }
+};
+
+// API Gửi mã xác nhận qua email
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const pool = await poolPromise; // Sử dụng poolPromise từ db.js
+    const result = await pool.request()
+      .input('email', sql.NVarChar, email)
+      .query('SELECT * FROM Users WHERE Email = @email');
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ success: false, message: 'Email không tồn tại' });
+    }
+
+    // Tạo mã xác nhận ngẫu nhiên
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const token = jwt.sign({ email, code }, process.env.JWT_SECRET || 'your_jwt_secret', { expiresIn: '10m' });
+
+    // Gửi email
+    await sendVerificationCode(email, code);
+
+    res.json({ success: true, token, message: 'Mã xác nhận đã được gửi tới email của bạn' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
+
+// API Xác nhận mã và đổi mật khẩu (không mã hóa mật khẩu)
+router.post('/reset-password', async (req, res) => {
+  const { token, code, newPassword } = req.body;
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+    if (decoded.code !== code) {
+      return res.status(400).json({ success: false, message: 'Mã xác nhận không đúng' });
+    }
+
+    // Lưu mật khẩu dưới dạng plain text
+    const pool = await poolPromise; // Sử dụng poolPromise từ db.js
+    await pool.request()
+      .input('email', sql.NVarChar, decoded.email)
+      .input('password', sql.NVarChar, newPassword)
+      .query('UPDATE Users SET Password = @password, UpdatedAt = GETDATE() WHERE Email = @email');
+
+    res.json({ success: true, message: 'Đổi mật khẩu thành công' });
+  } catch (error) {
+    console.error(error);
+    res.status(400).json({ success: false, message: 'Mã xác nhận hết hạn hoặc không hợp lệ' });
+  }
+});
+
+// Gắn router vào app
+app.use('/api/auth', router);
+
+// API Phone Match AI
+router.post('/phone-match', async (req, res) => {
+  const { budget, brand, ageGroup, preference, deviceType, purpose } = req.body;
+  console.log('Received request body:', { budget, brand, ageGroup, preference, deviceType, purpose });
+
+  try {
+    const pool = await poolPromise;
+    let query = `
+      SELECT p.ProductId, p.Name, p.Price, p.BrandId,
+      (SELECT TOP 1 ImageUrl FROM ProductImages pi WHERE pi.ProductId = p.ProductId) AS ImageUrl
+      FROM Products p
+      WHERE 1=1
+    `;
+    const params = {};
+
+    // Lọc theo ngân sách
+    if (budget) {
+      if (budget === 'under10') query += ' AND p.Price < 10000000';
+      else if (budget === '10to20') query += ' AND p.Price BETWEEN 10000000 AND 20000000';
+      else if (budget === 'over20') query += ' AND p.Price > 20000000';
+    }
+    console.log('Budget filter applied:', budget);
+
+    // Lọc theo thương hiệu
+    let brandId = null;
+    if (brand && brand !== 'any') {
+      if (brand === 'apple') brandId = 1;
+      else if (brand === 'samsung') brandId = 2;
+      if (brandId) {
+        query += ' AND p.BrandId = @brandId';
+        params.brandId = brandId;
+      }
+    }
+    console.log('Brand filter applied:', { brand, brandId });
+
+    // Lọc theo độ tuổi (dựa vào giá)
+    if (ageGroup) {
+      if (ageGroup === 'under18') {
+        // Người trẻ thường thích thiết bị giá rẻ
+        query += ' AND p.Price < 15000000';
+      } else if (ageGroup === '18to30') {
+        // Người trẻ tuổi thích thiết bị tầm trung
+        query += ' AND p.Price BETWEEN 10000000 AND 25000000';
+      } else if (ageGroup === 'over30') {
+        // Người lớn tuổi thích thiết bị cao cấp
+        query += ' AND p.Price > 20000000';
+      }
+    }
+    console.log('Age group filter applied:', ageGroup);
+
+    // Lọc theo sở thích (dựa vào tên sản phẩm)
+    if (preference) {
+      if (preference === 'camera') {
+        // Giả định các sản phẩm có từ "Pro" hoặc "Ultra" thường có camera tốt
+        query += " AND (p.Name LIKE '%Pro%' OR p.Name LIKE '%Ultra%')";
+      } else if (preference === 'gaming') {
+        // Giả định các sản phẩm có từ "Gaming" hoặc giá cao thường phù hợp chơi game
+        query += " AND (p.Name LIKE '%Gaming%' OR p.Price > 20000000)";
+      } else if (preference === 'battery') {
+        // Giả định các sản phẩm của Samsung hoặc có từ "Plus" thường có pin tốt
+        query += " AND (p.BrandId = 2 OR p.Name LIKE '%Plus%')";
+      }
+    }
+    console.log('Preference filter applied:', preference);
+
+    // Lọc theo loại thiết bị (dựa vào tên sản phẩm)
+    if (deviceType) {
+      if (deviceType === 'phone') {
+        query += " AND (p.Name LIKE '%Phone%' OR p.Name LIKE '%Galaxy%')";
+      } else if (deviceType === 'tablet') {
+        query += " AND p.Name LIKE '%Tab%'";
+      } else if (deviceType === 'laptop') {
+        query += " AND p.Name LIKE '%Laptop%'";
+      } else if (deviceType === 'macbook') {
+        query += " AND p.Name LIKE '%MacBook%'";
+      }
+    }
+    console.log('Device type filter applied:', deviceType);
+
+    // Lọc theo mục đích sử dụng (dựa vào giá và tên)
+    if (purpose) {
+      if (purpose === 'work') {
+        // Thiết bị làm việc thường là MacBook hoặc laptop cao cấp
+        query += " AND (p.Name LIKE '%MacBook%' OR p.Name LIKE '%Laptop%' OR p.Price > 20000000)";
+      } else if (purpose === 'entertainment') {
+        // Giải trí thường là điện thoại hoặc tablet
+        query += " AND (p.Name LIKE '%Phone%' OR p.Name LIKE '%Tab%')";
+      } else if (purpose === 'study') {
+        // Học tập thường là thiết bị giá tầm trung
+        query += ' AND p.Price BETWEEN 10000000 AND 20000000';
+      }
+    }
+    console.log('Purpose filter applied:', purpose);
+
+    // Nhóm sản phẩm để tránh trùng lặp
+    query += ' GROUP BY p.ProductId, p.Name, p.Price, p.BrandId';
+
+    console.log('Final SQL query:', query);
+    console.log('Query parameters:', params);
+
+    const request = pool.request();
+    Object.keys(params).forEach(key => request.input(key, sql.Int, params[key]));
+    const result = await request.query(query);
+
+    console.log('Query result:', result.recordset);
+
+    if (result.recordset.length === 0) {
+      console.log('No products found matching the criteria');
+      return res.json({ suggestions: [], message: 'Không tìm thấy sản phẩm phù hợp' });
+    }
+
+    const suggestions = result.recordset.map(product => ({
+      ...product,
+      Brand: product.BrandId === 1 ? 'Apple' : product.BrandId === 2 ? 'Samsung' : 'Unknown',
+    }));
+
+    console.log('Suggestions to return:', suggestions);
+    res.json({ suggestions });
+  } catch (error) {
+    console.error('Error in /phone-match API:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
 // API kiểm tra kết nối
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Backend is running!' });
@@ -265,10 +512,12 @@ app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
+    console.log(`[POST /api/login] Missing credentials: username=${username}, password=${password}`);
     return res.status(400).json({ success: false, message: 'Thiếu tên đăng nhập hoặc mật khẩu' });
   }
 
-  console.log('Server time:', new Date().toISOString()); // Log thời gian server để kiểm tra
+  console.log(`[POST /api/login] Attempting login for username: ${username}`);
+  console.log('Server time:', new Date().toISOString());
 
   try {
     const pool = await poolPromise;
@@ -280,16 +529,16 @@ app.post('/api/login', async (req, res) => {
 
     const user = result.recordset[0];
     if (!user) {
-      console.log('API /api/login - Invalid credentials:', { username });
+      console.log(`[POST /api/login] Invalid credentials for username: ${username}`);
       return res.status(401).json({ success: false, message: 'Tên đăng nhập hoặc mật khẩu không đúng' });
     }
 
-    // Cập nhật cột LastLogin, bù 7 giờ để chuyển sang múi giờ Việt Nam (UTC+7)
+    // Cập nhật cột LastLogin (UTC+7)
     await pool.request()
       .input('UserId', sql.Int, user.UserId)
       .query('UPDATE Users SET LastLogin = DATEADD(HOUR, 7, GETDATE()) WHERE UserId = @UserId');
 
-    // Tạo JWT token với các thuộc tính viết hoa
+    // Tạo JWT token
     const token = jwt.sign(
       { UserId: user.UserId, Username: user.Username, Role: user.Role },
       process.env.JWT_SECRET || 'your_jwt_secret',
@@ -299,10 +548,11 @@ app.post('/api/login', async (req, res) => {
     // Xóa mật khẩu khỏi dữ liệu trả về
     delete user.Password;
 
-    console.log('API /api/login - User logged in:', { user, token });
+    console.log(`[POST /api/login] User logged in successfully: userId=${user.UserId}, username=${user.Username}, role=${user.Role}, token=${token}`);
     res.json({ success: true, user, token });
   } catch (err) {
-    console.error('API /api/login - Error:', err);
+    console.error(`[POST /api/login] Error: ${err.message}`);
+    console.error(`[POST /api/login] Stack: ${err.stack}`);
     res.status(500).json({ success: false, message: 'Lỗi server khi đăng nhập' });
   }
 });
@@ -442,73 +692,8 @@ app.get('/api/products/:id', async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi server: ' + err.message });
   }
 });
-const router = express.Router();
-
-// //API Thông báo
-// // Định nghĩa các route cho thông báo
-// router.get('/notifications', authenticateToken, async (req, res) => {
-//   const userId = req.user.userId;
-//   console.log(`[${new Date().toISOString()}] Fetching notifications for userId: ${userId}`);
-
-//   try {
-//     const notifications = await knex('Notifications')
-//       .where('UserId', userId)
-//       .select('NotificationId', 'Title', 'Message', 'IsRead', 'CreatedAt');
-
-//     console.log(`[${new Date().toISOString()}] Fetched ${notifications.length} notifications for userId: ${userId}`);
-//     res.status(200).json({ success: true, notifications });
-//   } catch (error) {
-//     console.error(`[${new Date().toISOString()}] Error fetching notifications for userId: ${userId}, Error:`, error.message);
-//     res.status(500).json({ success: false, message: 'Lỗi server' });
-//   }
-// });
-// router.get('/notifications', authenticateToken, async (req, res) => {
-//   const userId = req.user.userId;
-//   console.log(`[${new Date().toISOString()}] Fetching notifications for userId: ${userId}`);
-
-//   try {
-//     const notifications = await knex('Notifications')
-//       .where('UserId', userId)
-//       .select('NotificationId', 'Title', 'Message', 'IsRead', 'CreatedAt');
-
-//     console.log(`[${new Date().toISOString()}] Fetched ${notifications.length} notifications for userId: ${userId}`);
-//     res.status(200).json({ success: true, notifications });
-//   } catch (error) {
-//     console.error(`[${new Date().toISOString()}] Error fetching notifications for userId: ${userId}, Error:`, error.message);
-//     res.status(500).json({ success: false, message: 'Lỗi server' });
-//   }
-// });
 
 
-// // Đánh dấu thông báo đã đọc
-// router.put('/notifications/:id/read', authenticateToken, async (req, res) => {
-//   const userId = req.user.userId;
-//   const notificationId = parseInt(req.params.id);
-//   console.log(`[${new Date().toISOString()}] Request received: PUT /api/notifications/${notificationId}/read for userId: ${userId}`);
-
-//   try {
-//     console.log(`[${new Date().toISOString()}] Checking if notification ${notificationId} exists for userId: ${userId}`);
-//     const notification = await knex('Notifications')
-//       .where({ NotificationId: notificationId, UserId: userId })
-//       .first();
-
-//     if (!notification) {
-//       console.log(`[${new Date().toISOString()}] Notification ${notificationId} not found for userId: ${userId}`);
-//       return res.status(404).json({ success: false, message: 'Thông báo không tồn tại' });
-//     }
-
-//     console.log(`[${new Date().toISOString()}] Notification ${notificationId} found, marking as read`);
-//     await knex('Notifications')
-//       .where({ NotificationId: notificationId })
-//       .update({ IsRead: true });
-
-//     console.log(`[${new Date().toISOString()}] Successfully marked notification ${notificationId} as read for userId: ${userId}`);
-//     res.status(200).json({ success: true, message: 'Đã đánh dấu thông báo là đã đọc' });
-//   } catch (error) {
-//     console.error(`[${new Date().toISOString()}] Error marking notification ${notificationId} as read for userId: ${userId}, Error:`, error.message, error.stack);
-//     res.status(500).json({ success: false, message: 'Lỗi server' });
-//   }
-// });
 // Gắn router vào ứng dụng với tiền tố /api
 app.use('/api', router);
 
@@ -909,31 +1094,55 @@ app.get('/api/reviews/:productId', async (req, res) => {
     const result = await pool.request()
       .input('ProductId', sql.Int, parseInt(productId))
       .query(`
-        SELECT r.ReviewId, r.ProductId, r.UserId, r.Rating, r.Comment, r.CreatedAt, u.Username
+        SELECT r.ReviewId, r.ProductId, r.UserId, r.Rating, r.Comment, r.CreatedAt, u.Username,
+               rr.ReplyId, rr.UserId AS ReplyUserId, rr.ReplyText, rr.CreatedAt AS ReplyCreatedAt, 
+               ru.Username AS ReplyUsername, ru.Role AS ReplyUserRole
         FROM Reviews r
         JOIN Users u ON r.UserId = u.UserId
+        LEFT JOIN ReviewReplies rr ON r.ReviewId = rr.ReviewId
+        LEFT JOIN Users ru ON rr.UserId = ru.UserId
         WHERE r.ProductId = @ProductId
-        ORDER BY r.CreatedAt DESC
+        ORDER BY r.CreatedAt DESC, rr.CreatedAt ASC
       `);
 
-    const reviews = result.recordset.map(review => ({
-      reviewId: review.ReviewId,
-      productId: review.ProductId,
-      userId: review.UserId,
-      username: review.Username,
-      rating: review.Rating,
-      comment: review.Comment,
-      createdAt: moment(review.CreatedAt).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss'),
-    }));
+    const reviewsMap = new Map();
+    result.recordset.forEach(row => {
+      const reviewId = row.ReviewId;
+      if (!reviewsMap.has(reviewId)) {
+        reviewsMap.set(reviewId, {
+          reviewId: row.ReviewId,
+          productId: row.ProductId,
+          userId: row.UserId,
+          username: row.Username,
+          rating: row.Rating,
+          comment: row.Comment,
+          createdAt: moment(row.CreatedAt).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss'),
+          replies: [],
+        });
+      }
 
+      if (row.ReplyId) {
+        console.log(`[GET /api/reviews/${productId}] Processing reply: replyId=${row.ReplyId}, userId=${row.ReplyUserId}, role=${row.ReplyUserRole}`);
+        reviewsMap.get(reviewId).replies.push({
+          replyId: row.ReplyId,
+          userId: row.ReplyUserId,
+          username: row.ReplyUsername,
+          replyText: row.ReplyText,
+          createdAt: moment(row.ReplyCreatedAt).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss'),
+          role: row.ReplyUserRole,
+        });
+      }
+    });
+
+    const reviews = Array.from(reviewsMap.values());
     console.log(`[GET /api/reviews/${productId}] Found ${reviews.length} reviews`);
     res.json({ success: true, reviews });
   } catch (err) {
-    console.error(`[GET /api/reviews/${productId}] Error:`, err.message, err.stack);
+    console.error(`[GET /api/reviews/${productId}] Error: ${err.message}`);
+    console.error(`[GET /api/reviews/${productId}] Stack: ${err.stack}`);
     res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
   }
 });
-
 // API thêm bình luận mới
 app.post('/api/reviews', authenticateToken, async (req, res) => {
   const { productId, rating, comment } = req.body;
@@ -981,6 +1190,125 @@ app.post('/api/reviews', authenticateToken, async (req, res) => {
   }
 });
 
+//API reply bình luận
+app.post('/api/reviews/reply', authenticateToken, async (req, res) => {
+  const { reviewId, replyText } = req.body;
+  const userId = req.user.UserId;
+
+  // Log thông tin đầu vào
+  console.log(`[POST /api/reviews/reply] Received request: reviewId=${reviewId}, userId=${userId}, replyText="${replyText}"`);
+
+  // Kiểm tra dữ liệu đầu vào
+  if (!reviewId || !replyText || replyText.trim().length === 0) {
+    console.error(`[POST /api/reviews/reply] Invalid input: reviewId=${reviewId}, replyText="${replyText}"`);
+    return res.status(400).json({ success: false, message: 'Dữ liệu không hợp lệ' });
+  }
+
+  try {
+    const pool = await poolPromise;
+    console.log(`[POST /api/reviews/reply] Database connection established for userId: ${userId}`);
+
+    // Kiểm tra xem đánh giá có tồn tại không
+    console.log(`[POST /api/reviews/reply] Checking if review exists: reviewId=${reviewId}`);
+    const reviewCheck = await pool.request()
+      .input('ReviewId', sql.Int, reviewId)
+      .query('SELECT ReviewId, UserId FROM Reviews WHERE ReviewId = @ReviewId');
+    
+    if (reviewCheck.recordset.length === 0) {
+      console.error(`[POST /api/reviews/reply] Review not found: reviewId=${reviewId}`);
+      return res.status(404).json({ success: false, message: 'Đánh giá không tồn tại' });
+    }
+
+    const reviewOwnerId = reviewCheck.recordset[0].UserId;
+    console.log(`[POST /api/reviews/reply] Review found: reviewId=${reviewId}, ownerId=${reviewOwnerId}`);
+
+    // Kiểm tra vai trò người dùng
+    const userRole = req.user.Role;
+    console.log(`[POST /api/reviews/reply] Checking user role: userId=${userId}, role=${userRole}`);
+    if (userRole !== 'Admin' && userRole !== 'Customer') {
+      console.error(`[POST /api/reviews/reply] Unauthorized: userId=${userId}, role=${userRole}`);
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền trả lời' });
+    }
+
+    // Thêm phản hồi vào database
+    console.log(`[POST /api/reviews/reply] Inserting reply: reviewId=${reviewId}, userId=${userId}, replyText="${replyText}"`);
+    const result = await pool.request()
+      .input('ReviewId', sql.Int, reviewId)
+      .input('UserId', sql.Int, userId)
+      .input('ReplyText', sql.NVarChar(500), replyText)
+      .input('CreatedAt', sql.DateTime, moment().tz('Asia/Ho_Chi_Minh').toDate())
+      .query(`
+        INSERT INTO ReviewReplies (ReviewId, UserId, ReplyText, CreatedAt)
+        VALUES (@ReviewId, @UserId, @ReplyText, @CreatedAt);
+        SELECT SCOPE_IDENTITY() AS ReplyId;
+      `);
+
+    const replyId = result.recordset[0].ReplyId;
+    console.log(`[POST /api/reviews/reply] Reply inserted successfully: replyId=${replyId}`);
+
+    // Gửi thông báo cho người sở hữu đánh giá (nếu có)
+    if (reviewOwnerId !== userId) {
+      console.log(`[POST /api/reviews/reply] Sending notification to review owner: ownerId=${reviewOwnerId}`);
+      await pool.request()
+        .input('UserId', sql.Int, reviewOwnerId)
+        .input('Title', sql.NVarChar(100), 'Phản hồi mới cho đánh giá của bạn')
+        .input('Message', sql.NVarChar(255), `Đánh giá của bạn đã được trả lời bởi ${req.user.Username}.`)
+        .input('CreatedAt', sql.DateTime, moment().tz('Asia/Ho_Chi_Minh').toDate())
+        .query(`
+          INSERT INTO Notifications (UserId, Title, Message, CreatedAt)
+          VALUES (@UserId, @Title, @Message, @CreatedAt);
+        `);
+      console.log(`[POST /api/reviews/reply] Notification sent to ownerId: ${reviewOwnerId}`);
+    } else {
+      console.log(`[POST /api/reviews/reply] No notification sent: userId=${userId} is the review owner`);
+    }
+
+    // Trả về phản hồi thành công
+    console.log(`[POST /api/reviews/reply] Success: Reply added with replyId=${replyId}`);
+    res.json({ success: true, message: 'Phản hồi đã được gửi', replyId });
+  } catch (err) {
+    // Log lỗi chi tiết
+    console.error(`[POST /api/reviews/reply] Error: ${err.message}`);
+    console.error(`[POST /api/reviews/reply] Stack: ${err.stack}`);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
+  }
+});
+
+//API lấy thông báo
+app.get('/api/notifications', authenticateToken, async (req, res) => {
+  const userId = req.user.UserId;
+  console.log(`[GET /api/notifications] Fetching notifications for userId: ${userId}`);
+
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('UserId', sql.Int, userId)
+      .query(`
+        SELECT NotificationId, UserId, Title, Message, CreatedAt, IsRead
+        FROM Notifications
+        WHERE UserId = @UserId
+        ORDER BY CreatedAt DESC
+      `);
+
+    const notifications = result.recordset.map(notification => ({
+      notificationId: notification.NotificationId,
+      userId: notification.UserId,
+      title: notification.Title,
+      message: notification.Message,
+      createdAt: moment(notification.CreatedAt).tz('Asia/Ho_Chi_Minh').format('DD/MM/YYYY HH:mm:ss'),
+      isRead: !!notification.IsRead,
+    }));
+
+    console.log(`[GET /api/notifications] Found ${notifications.length} notifications for userId: ${userId}`);
+    res.json({ success: true, notifications });
+  } catch (err) {
+    console.error(`[GET /api/notifications] Error: ${err.message}`);
+    console.error(`[GET /api/notifications] Stack: ${err.stack}`);
+    res.status(500).json({ success: false, message: `Lỗi server: ${err.message}` });
+  }
+});
+
+//
 // Kiểm tra và áp dụng mã giảm giá
 app.post('/api/discount/apply', async (req, res) => {
   const { code } = req.body;
@@ -1019,7 +1347,6 @@ app.post('/api/discount/apply', async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi server khi áp dụng mã giảm giá' });
   }
 });
-
 // API lấy giỏ hàng
 app.get('/api/cart', authenticateToken, async (req, res) => {
   const userId = req.user.UserId;
@@ -1962,7 +2289,7 @@ app.post('/api/orders/:orderId/cancel', authenticateToken, async (req, res) => {
 
       // Cập nhật trạng thái đơn hàng
       const updateRequest = transaction.request();
-      const updatedAt = moment().tz('Asia/Ho_Chi_Minh').toDate(); // Sử dụng múi giờ Việt Nam
+      const updatedAt = moment().tz('Asia/Ho_Chi_Minh').toDate();
       await updateRequest
         .input('OrderId', sql.VarChar(50), orderId)
         .input('UserId', sql.Int, userId)
@@ -1973,7 +2300,7 @@ app.post('/api/orders/:orderId/cancel', authenticateToken, async (req, res) => {
           WHERE OrderId = @OrderId AND UserId = @UserId
         `);
 
-      // Cập nhật trạng thái thanh toán (nếu cần)
+      // Cập nhật trạng thái thanh toán
       const paymentUpdateRequest = transaction.request();
       await paymentUpdateRequest
         .input('OrderId', sql.VarChar(50), orderId)
@@ -2009,6 +2336,13 @@ app.post('/api/orders/:orderId/cancel', authenticateToken, async (req, res) => {
 
       await transaction.commit();
       console.log(`[POST /api/orders/${orderId}/cancel] - Order cancelled successfully`);
+
+      // Gửi thông báo cho admin khi đơn hàng bị hủy
+      await notifyAdmin(
+        'Đơn hàng bị hủy',
+        `Đơn hàng #${orderId} với tổng tiền ${order.Total.toLocaleString('vi-VN')} VNĐ đã bị hủy bởi người dùng`
+      );
+
       res.json({ success: true, message: 'Đơn hàng đã được hủy thành công' });
     } catch (err) {
       await transaction.rollback();
@@ -2657,96 +2991,82 @@ app.get('/api/sale-products', async (req, res) => {
 
 
 //ADMIN
-//2.1. Cải tiến API /api/admin/notifications (Lấy số lượng thông báo chưa đọc)
-app.get('/api/admin/notifications', verifyAdmin, async (req, res) => {
+// API đếm thông báo chưa đọc
+app.get('/api/admin/notifications', authenticateToken, async (req, res) => {
+  const userId = req.user.UserId;
   try {
     const pool = await poolPromise;
     const result = await pool.request()
-      .input('UserId', sql.Int, req.user.userId)
+      .input('UserId', sql.Int, userId)
       .query(`
-        SELECT COUNT(*) AS count
+        SELECT COUNT(*) as count
         FROM Notifications
         WHERE UserId = @UserId AND IsRead = 0
       `);
     res.json({ success: true, count: result.recordset[0].count });
   } catch (err) {
-    console.error('Error fetching notifications count:', err);
-    res.status(500).json({ success: false, message: 'Lỗi server khi lấy số lượng thông báo' });
+    console.error('[GET /api/admin/notifications] Error:', err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
-//2.2. Cải tiến API /api/admin/notifications/list (Lấy danh sách thông báo)
-app.get('/api/admin/notifications/list', verifyAdmin, async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
-  const offset = (pageNum - 1) * limitNum;
-
+// API lấy danh sách thông báo
+app.get('/api/admin/notifications/list', authenticateToken, async (req, res) => {
+  const userId = req.user.UserId;
   try {
     const pool = await poolPromise;
     const result = await pool.request()
-      .input('UserId', sql.Int, req.user.userId)
-      .input('Offset', sql.Int, offset)
-      .input('Limit', sql.Int, limitNum)
+      .input('UserId', sql.Int, userId)
       .query(`
-        SELECT NotificationId, Title, Message, Type, CreatedAt, IsRead
+        SELECT NotificationId, Title, Message, CreatedAt, IsRead, 'Order' as Type
         FROM Notifications
         WHERE UserId = @UserId
         ORDER BY CreatedAt DESC
-        OFFSET @Offset ROWS
-        FETCH NEXT @Limit ROWS ONLY
       `);
-
     res.json({ success: true, notifications: result.recordset });
   } catch (err) {
-    console.error('Error fetching notifications list:', err);
-    res.status(500).json({ success: false, message: 'Lỗi server khi lấy danh sách thông báo' });
+    console.error('[GET /api/admin/notifications/list] Error:', err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
-//2.2. Cải tiến API /api/admin/notifications/list (Lấy danh sách thông báo)
-app.get('/api/admin/notifications/list', verifyAdmin, async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
-  const offset = (pageNum - 1) * limitNum;
-
-  try {
-    const pool = await poolPromise;
-    const result = await pool.request()
-      .input('UserId', sql.Int, req.user.userId)
-      .input('Offset', sql.Int, offset)
-      .input('Limit', sql.Int, limitNum)
-      .query(`
-        SELECT NotificationId, Title, Message, Type, CreatedAt, IsRead
-        FROM Notifications
-        WHERE UserId = @UserId
-        ORDER BY CreatedAt DESC
-        OFFSET @Offset ROWS
-        FETCH NEXT @Limit ROWS ONLY
-      `);
-
-    res.json({ success: true, notifications: result.recordset });
-  } catch (err) {
-    console.error('Error fetching notifications list:', err);
-    res.status(500).json({ success: false, message: 'Lỗi server khi lấy danh sách thông báo' });
-  }
-});
-//2.3. Thêm API /api/admin/notifications/mark-all-read (Đánh dấu tất cả thông báo là đã đọc)
-app.put('/api/admin/notifications/mark-all-read', verifyAdmin, async (req, res) => {
+// API đánh dấu thông báo đã đọc
+app.put('/api/admin/notifications/:id/mark-read', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.UserId;
   try {
     const pool = await poolPromise;
     await pool.request()
-      .input('UserId', sql.Int, req.user.userId)
+      .input('NotificationId', sql.Int, id)
+      .input('UserId', sql.Int, userId)
+      .query(`
+        UPDATE Notifications
+        SET IsRead = 1
+        WHERE NotificationId = @NotificationId AND UserId = @UserId
+      `);
+    res.json({ success: true, message: 'Đã đánh dấu là đã đọc' });
+  } catch (err) {
+    console.error('[PUT /api/admin/notifications/:id/mark-read] Error:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// API đánh dấu tất cả đã đọc
+app.put('/api/admin/notifications/mark-all-read', authenticateToken, async (req, res) => {
+  const userId = req.user.UserId;
+  try {
+    const pool = await poolPromise;
+    await pool.request()
+      .input('UserId', sql.Int, userId)
       .query(`
         UPDATE Notifications
         SET IsRead = 1
         WHERE UserId = @UserId AND IsRead = 0
       `);
-    res.json({ success: true, message: 'Đã đánh dấu tất cả thông báo là đã đọc' });
+    res.json({ success: true, message: 'Đã đánh dấu tất cả là đã đọc' });
   } catch (err) {
-    console.error('Error marking all notifications as read:', err);
-    res.status(500).json({ success: false, message: 'Lỗi server khi đánh dấu tất cả thông báo' });
+    console.error('[PUT /api/admin/notifications/mark-all-read] Error:', err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -3685,7 +4005,6 @@ app.delete('/api/admin/brands/:id', authenticateToken, async (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 });
-// API lấy danh sách đơn hàng
 // API lấy danh sách đơn hàng
 app.get('/api/admin/orders', authenticateToken, async (req, res) => {
   try {
@@ -4789,4 +5108,12 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi server khi lấy dữ liệu thống kê', error: err.message });
   }
 });
+
+io.on('connection', (socket) => {
+  console.log('[Socket.io] Client connected:', socket.id);
+  socket.on('disconnect', () => {
+    console.log('[Socket.io] Client disconnected:', socket.id);
+  });
+});
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

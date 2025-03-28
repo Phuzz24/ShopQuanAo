@@ -102,7 +102,6 @@ const CartDetailPage = () => {
                       </div>
                       <div className="flex-1">
                         <h3 className="text-xl font-semibold text-gray-800 mb-1 hover:text-indigo-600 transition-colors duration-200">{product.name}</h3>
-                        <p className="text-sm text-gray-500">{product.category || 'Không xác định'}</p>
                         <p className="text-sm text-green-600 font-medium">{product.status || 'Còn hàng'}</p>
                         <p className="text-md font-bold text-indigo-600 mt-2">
                           {product.discountedPrice !== undefined &&

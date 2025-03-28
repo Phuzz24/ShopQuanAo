@@ -237,6 +237,11 @@ const LoginPage = () => {
                 Đăng ký
               </Link>
             </p>
+            <p className="text-sm text-gray-600 mt-2">
+    <Link to="/forgot-password" className="text-indigo-600 hover:underline font-semibold">
+      Quên mật khẩu?
+    </Link>
+  </p>
           </div>
 
           <div className="mt-8">

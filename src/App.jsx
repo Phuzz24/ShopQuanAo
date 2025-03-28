@@ -33,6 +33,8 @@ import Footer from './components/Footer';
 import CheckoutPage from './routes/CheckoutPage';
 import OrderDetailPage from './routes/OrderDetailPage';
 import WishlistPage from './routes/WishListPage';
+import PhoneMatchAI from './routes/PhoneMatchAI';
+import Notification from './routes/NotificationPage'
 //Admin Page
 import AdminUsers from './routes/admin/AdminUsers';
 import Categories from './routes/admin/Categories';
@@ -98,10 +100,6 @@ const ProtectedRoute = ({ children }) => {
 const RedirectAfterLogin = () => {
   const { user } = useUser();
 
-  if (!user) {
-    return <Navigate to="/login" />;
-  }
-
   if (user.Role === 'Admin') {
     return <Navigate to="/admin" />;
   }
@@ -124,8 +122,7 @@ const App = () => {
       <Route path="/" element={<RedirectAfterLogin />} />
           {/* Layout dành cho User */}
           <Route element={<UserLayout />}>
-          <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
-              <Route path="/home" element={<HomePage />} />
+              <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
               <Route path="/product" element={<ProductPage />} />
               <Route path="/sale" element={<SalePage />} />
               <Route path="/hot" element={<HotPage />} />
@@ -141,6 +138,8 @@ const App = () => {
               <Route path="/order-history" element={<ProtectedRoute><OrderHistoryPage /></ProtectedRoute>} />
               <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
               <Route path="/wishlist" element={<ProtectedRoute><WishlistPage /></ProtectedRoute>} />
+              <Route path="/notifications" element={<ProtectedRoute><Notification /></ProtectedRoute>} />
+              <Route path="/phone-match" element={<PhoneMatchAI />} />
             </Route>
 
          {/* Layout dành cho Admin */}

@@ -36,7 +36,7 @@ const getStatusClass = (status) => {
 };
 
 // Component con để tối ưu render bảng
-const OrderRow = React.memo(({ order, handleViewDetails, handleDeleteOrder }) => {
+const OrderRow = React.memo(({ order, handleViewDetails, setOrderToDelete, setIsDeleteModalOpen }) => {
   return (
     <tr className="border-b transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-800">
       <td className="p-4 text-gray-700 dark:text-gray-300">{order.OrderId}</td>
@@ -68,7 +68,10 @@ const OrderRow = React.memo(({ order, handleViewDetails, handleDeleteOrder }) =>
             variant="ghost"
             size="icon"
             className="h-9 w-9 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-            onClick={() => handleDeleteOrder(order.OrderId)}
+            onClick={() => {
+              setOrderToDelete(order); // Đặt đơn hàng cần xóa
+              setIsDeleteModalOpen(true); // Mở modal
+            }}
           >
             <Trash2 className="h-5 w-5" />
           </Button>
@@ -93,6 +96,8 @@ const Orders = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [editStatus, setEditStatus] = useState("");
   const [editPaymentStatus, setEditPaymentStatus] = useState("");
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+const [orderToDelete, setOrderToDelete] = useState(null);
   const navigate = useNavigate();
 
   // Debounce cho tìm kiếm
@@ -218,10 +223,6 @@ const Orders = () => {
   };
 
   const handleDeleteOrder = async (orderId) => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa đơn hàng này?")) {
-      return;
-    }
-
     const token = localStorage.getItem("token");
     if (!token) {
       toast.error("Vui lòng đăng nhập để tiếp tục.");
@@ -342,11 +343,12 @@ const Orders = () => {
                 ) : (
                   orders.map((order) => (
                     <OrderRow
-                      key={order.OrderId}
-                      order={order}
-                      handleViewDetails={handleViewDetails}
-                      handleDeleteOrder={handleDeleteOrder}
-                    />
+                    key={order.OrderId}
+                    order={order}
+                    handleViewDetails={handleViewDetails}
+                    setOrderToDelete={setOrderToDelete} // Truyền hàm setOrderToDelete
+                    setIsDeleteModalOpen={setIsDeleteModalOpen} // Truyền hàm setIsDeleteModalOpen
+                  />
                   ))
                 )}
               </tbody>
@@ -513,6 +515,38 @@ const Orders = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+  <DialogContent className="sm:max-w-[425px] bg-white dark:bg-gray-800 rounded-xl shadow-2xl">
+    <DialogHeader>
+      <DialogTitle className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+        Xác nhận xóa đơn hàng
+      </DialogTitle>
+    </DialogHeader>
+    <p className="text-gray-700 dark:text-gray-300">
+      Bạn có chắc chắn muốn xóa đơn hàng <strong>#{orderToDelete?.OrderId}</strong> không? Hành động này không thể hoàn tác.
+    </p>
+    <DialogFooter>
+      <Button
+        variant="outline"
+        className="rounded-lg border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+        onClick={() => setIsDeleteModalOpen(false)}
+      >
+        Hủy
+      </Button>
+      <Button
+        variant="destructive"
+        className="rounded-lg bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 shadow-lg transform hover:scale-105 transition-all duration-300"
+        onClick={() => {
+          handleDeleteOrder(orderToDelete.OrderId); // Gọi hàm xóa
+          setIsDeleteModalOpen(false); // Đóng modal
+        }}
+      >
+        Xóa
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
     </div>
   );
 };

@@ -23,12 +23,7 @@ const Navbar = () => {
   const toggleCart = () => setShowCart(!showCart);
   const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
   const toggleDropdown = () => setShowDropdown(!showDropdown);
-  const toggleNotificationDropdown = () => {
-    setShowNotificationDropdown(!showNotificationDropdown);
-    if (!showNotificationDropdown) {
-      markNotificationsAsRead();
-    }
-  };
+  const toggleNotificationDropdown = () => setShowNotificationDropdown(!showNotificationDropdown);
 
   const getTotalItems = () => cart.reduce((total, product) => total + product.quantity, 0);
   const getUnreadNotifications = () => notifications.filter(notification => !notification.isRead).length;
@@ -68,43 +63,40 @@ const Navbar = () => {
     fetchNotifications();
   }, [token]);
 
-  // Đánh dấu tất cả thông báo là đã đọc
-  const markNotificationsAsRead = async () => {
+  // Đánh dấu một thông báo là đã đọc
+  const markNotificationAsRead = async (notificationId) => {
     if (!token) {
-      console.log('No token found, skipping markNotificationsAsRead');
+      console.log('No token found, skipping markNotificationAsRead');
       return;
     }
     try {
-      const unreadNotifications = notifications.filter(notification => !notification.isRead);
-      console.log('Unread notifications to mark as read:', unreadNotifications);
-      for (const notification of unreadNotifications) {
-        console.log(`Marking notification ${notification.notificationId} as read`);
-        const response = await fetch(`http://localhost:5000/api/notifications/${notification.notificationId}/read`, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        console.log(`Mark notification ${notification.notificationId} response status:`, response.status);
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Failed to mark notification ${notification.notificationId} as read, Status: ${response.status}, Response:`, errorText);
-          throw new Error(`Không thể đánh dấu thông báo ${notification.notificationId} là đã đọc`);
-        }
-        const data = await response.json();
-        console.log(`Mark notification ${notification.notificationId} response data:`, data);
-        if (!data.success) {
-          throw new Error(data.message || `Không thể đánh dấu thông báo ${notification.notificationId} là đã đọc`);
-        }
+      console.log(`Marking notification ${notificationId} as read`);
+      const response = await fetch(`http://localhost:5000/api/notifications/${notificationId}/read`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      console.log(`Mark notification ${notificationId} response status:`, response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Failed to mark notification ${notificationId} as read, Status: ${response.status}, Response:`, errorText);
+        throw new Error(`Không thể đánh dấu thông báo ${notificationId} là đã đọc`);
       }
-      // Cập nhật state sau khi đánh dấu
-      setNotifications(notifications.map(notification => ({
-        ...notification,
-        isRead: true,
-      })));
-      console.log('All notifications marked as read');
+      const data = await response.json();
+      console.log(`Mark notification ${notificationId} response data:`, data);
+      if (!data.success) {
+        throw new Error(data.message || `Không thể đánh dấu thông báo ${notificationId} là đã đọc`);
+      }
+      // Cập nhật state
+      setNotifications(notifications.map(notification =>
+        notification.notificationId === notificationId
+          ? { ...notification, isRead: true }
+          : notification
+      ));
+      console.log(`Notification ${notificationId} marked as read`);
     } catch (error) {
-      console.error('Error marking notifications as read:', error.message, error.stack);
+      console.error(`Error marking notification ${notificationId} as read:`, error.message, error.stack);
       toast.error(error.message, { autoClose: 2000 });
     }
   };
@@ -234,18 +226,30 @@ const Navbar = () => {
                       <FaBell className="text-yellow-500" /> Thông Báo
                     </h3>
                     {notifications.length > 0 ? (
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {notifications.slice(0, 3).map((notification) => (
-                          <div
-                            key={notification.notificationId}
-                            className={`p-2 rounded-md ${notification.isRead ? 'bg-gray-700' : 'bg-yellow-600/20'}`}
+                      <>
+                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                          {notifications.slice(0, 5).map((notification) => (
+                            <div
+                              key={notification.notificationId}
+                              onClick={() => !notification.isRead && markNotificationAsRead(notification.notificationId)}
+                              className={`p-2 rounded-md cursor-pointer ${notification.isRead ? 'bg-gray-700' : 'bg-yellow-600/20'}`}
+                            >
+                              <p className="text-sm font-medium text-gray-200">{notification.title}</p>
+                              <p className="text-sm text-gray-400">{notification.message}</p>
+                              <p className="text-xs text-gray-500">{notification.createdAt}</p>
+                            </div>
+                          ))}
+                        </div>
+                        {notifications.length > 5 && (
+                          <Link
+                            to="/notifications"
+                            onClick={() => setShowNotificationDropdown(false)}
+                            className="block text-center mt-2 text-sm text-yellow-500 hover:underline"
                           >
-                            <p className="text-sm font-medium text-gray-200">{notification.title}</p>
-                            <p className="text-sm text-gray-400">{notification.message}</p>
-                            <p className="text-xs text-gray-500">{notification.createdAt}</p>
-                          </div>
-                        ))}
-                      </div>
+                            Xem tất cả
+                          </Link>
+                        )}
+                      </>
                     ) : (
                       <p className="text-gray-400">Không có thông báo nào.</p>
                     )}
@@ -390,18 +394,30 @@ const Navbar = () => {
                         <FaBell className="text-yellow-500" /> Thông Báo
                       </h3>
                       {notifications.length > 0 ? (
-                        <div className="space-y-2 max-h-60 overflow-y-auto">
-                          {notifications.slice(0, 3).map((notification) => (
-                            <div
-                              key={notification.notificationId}
-                              className={`p-2 rounded-md ${notification.isRead ? 'bg-gray-700' : 'bg-yellow-600/20'}`}
+                        <>
+                          <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {notifications.slice(0, 3).map((notification) => (
+                              <div
+                                key={notification.notificationId}
+                                onClick={() => !notification.isRead && markNotificationAsRead(notification.notificationId)}
+                                className={`p-2 rounded-md cursor-pointer ${notification.isRead ? 'bg-gray-700' : 'bg-yellow-600/20'}`}
+                              >
+                                <p className="text-sm font-medium text-gray-200">{notification.title}</p>
+                                <p className="text-sm text-gray-400">{notification.message}</p>
+                                <p className="text-xs text-gray-500">{notification.createdAt}</p>
+                              </div>
+                            ))}
+                          </div>
+                          {notifications.length > 3 && (
+                            <Link
+                              to="/notifications"
+                              onClick={() => setShowNotificationDropdown(false)}
+                              className="block text-center mt-2 text-sm text-yellow-500 hover:underline"
                             >
-                              <p className="text-sm font-medium text-gray-200">{notification.title}</p>
-                              <p className="text-sm text-gray-400">{notification.message}</p>
-                              <p className="text-xs text-gray-500">{notification.createdAt}</p>
-                            </div>
-                          ))}
-                        </div>
+                              Xem tất cả
+                            </Link>
+                          )}
+                        </>
                       ) : (
                         <p className="text-gray-400">Không có thông báo nào.</p>
                       )}
@@ -424,7 +440,7 @@ const Navbar = () => {
                     Lịch sử đơn hàng
                   </Link>
                   <Link to="/wishlist" onClick={toggleMobileMenu} className="hover:text-yellow-500 transition duration-200 flex items-center gap-2">
-                     Danh sách yêu thích
+                    Danh sách yêu thích
                   </Link>
                   <button onClick={handleLogout} className="text-left hover:text-yellow-500 transition duration-200">
                     Đăng xuất

@@ -39,6 +39,8 @@ const CheckoutPage = () => {
   const [transactionId, setTransactionId] = useState('');
   const [isPaymentProcessed, setIsPaymentProcessed] = useState(false);
   const [pendingOrder, setPendingOrder] = useState(null);
+  const [hasShownSuccessToast, setHasShownSuccessToast] = useState(false); // Biến để kiểm soát toast.success
+  const [hasFetchedCart, setHasFetchedCart] = useState(false); // Biến để kiểm soát fetchCartFromDB
 
   const timeZone = 'Asia/Ho_Chi_Minh';
 
@@ -68,68 +70,38 @@ const CheckoutPage = () => {
         setIsPaymentProcessed(true);
         console.log('Updated paymentStatus to success based on database:', paymentStatus);
   
-        if (state?.fromBuyNow) {
-          console.log('Removing item from cart - fromBuyNow:', state.fromBuyNow, 'UserId:', user.UserId, 'ProductId:', checkoutItems[0].id);
+        // Xử lý xóa giỏ hàng
+        const itemsToRemove = state?.fromBuyNow ? [checkoutItems[0]] : checkoutItems;
+        for (const item of itemsToRemove) {
+          console.log('Removing item with ProductId:', item.id);
           try {
             const response = await axios.delete('http://localhost:5000/api/cart/remove', {
               headers: { Authorization: `Bearer ${token}` },
-              data: { userId: parseInt(user.UserId, 10), productId: checkoutItems[0].id },
+              data: { userId: parseInt(user.UserId, 10), productId: item.id },
             });
             console.log('Response from /api/cart/remove:', response.data);
   
             if (response.data.cart) {
               setCheckoutItems(response.data.cart);
-              fetchCartFromDB();
             }
   
-            removeFromCart(checkoutItems[0].id);
+            removeFromCart(item.id, false); // Không hiển thị toast
           } catch (err) {
-            console.error('Error removing item from cart:', err.response?.data || err.message);
-            if (err.response?.status === 404) {
-              console.log('Item not found in cart on server, removing from client anyway');
-              removeFromCart(checkoutItems[0].id);
-              if (err.response?.data?.cart) {
-                setCheckoutItems(err.response.data.cart);
-                fetchCartFromDB();
-              }
-            } else {
-              console.error('Failed to remove item from cart on server:', err.response?.data?.message || err.message);
-            }
-          }
-        } else {
-          console.log('Removing items from cart - not fromBuyNow, Items:', checkoutItems);
-          for (const item of checkoutItems) {
-            console.log('Removing item with ProductId:', item.id);
-            try {
-              const response = await axios.delete('http://localhost:5000/api/cart/remove', {
-                headers: { Authorization: `Bearer ${token}` },
-                data: { userId: parseInt(user.UserId, 10), productId: item.id },
-              });
-              console.log('Response from /api/cart/remove:', response.data);
-  
-              if (response.data.cart) {
-                setCheckoutItems(response.data.cart);
-                fetchCartFromDB();
-              }
-  
-              removeFromCart(item.id);
-            } catch (err) {
-              console.error('Error removing item from cart on server:', err.response?.data || err.message);
-              if (err.response?.status === 404) {
-                console.log('Item not found in cart on server, removing from client anyway');
-                removeFromCart(item.id);
-                if (err.response?.data?.cart) {
-                  setCheckoutItems(err.response.data.cart);
-                  fetchCartFromDB();
-                }
-              } else {
-                console.error('Failed to remove item from cart on server:', err.response?.data?.message || err.message);
-              }
+            console.error('Error removing item from cart on server:', err.response?.data || err.message);
+            // Bỏ qua lỗi và tiếp tục xóa trên client
+            removeFromCart(item.id, false); // Không hiển thị toast
+            if (err.response?.data?.cart) {
+              setCheckoutItems(err.response.data.cart);
             }
           }
         }
   
-        toast.success(`Đơn hàng ${orderId} đã được thanh toán thành công!`, { autoClose: 2000 });
+        // Chỉ gọi fetchCartFromDB một lần sau khi xóa tất cả sản phẩm
+        if (!hasFetchedCart) {
+          fetchCartFromDB();
+          setHasFetchedCart(true);
+        }
+  
         setStep(4);
         setPendingOrder(null);
         return true;
@@ -148,72 +120,48 @@ const CheckoutPage = () => {
         setIsPaymentProcessed(true);
         console.log('Updated paymentStatus to success:', paymentStatus);
   
-        if (state?.fromBuyNow) {
+        // Xử lý xóa giỏ hàng
+        const itemsToRemove = state?.fromBuyNow ? [checkoutItems[0]] : checkoutItems;
+        for (const item of itemsToRemove) {
           try {
             const response = await axios.delete('http://localhost:5000/api/cart/remove', {
               headers: { Authorization: `Bearer ${token}` },
-              data: { userId: parseInt(user.UserId, 10), productId: checkoutItems[0].id },
+              data: { userId: parseInt(user.UserId, 10), productId: item.id },
             });
             console.log('Response from /api/cart/remove:', response.data);
   
             if (response.data.cart) {
               setCheckoutItems(response.data.cart);
-              fetchCartFromDB();
             }
   
-            removeFromCart(checkoutItems[0].id);
+            removeFromCart(item.id, false); // Không hiển thị toast
           } catch (err) {
             console.error('Error removing item from cart:', err.response?.data || err.message);
-            if (err.response?.status === 404) {
-              console.log('Item not found in cart on server, removing from client anyway');
-              removeFromCart(checkoutItems[0].id);
-              if (err.response?.data?.cart) {
-                setCheckoutItems(err.response.data.cart);
-                fetchCartFromDB();
-              }
-            } else {
-              console.error('Failed to remove item from cart on server:', err.response?.data?.message || err.message);
-            }
-          }
-        } else {
-          for (const item of checkoutItems) {
-            try {
-              const response = await axios.delete('http://localhost:5000/api/cart/remove', {
-                headers: { Authorization: `Bearer ${token}` },
-                data: { userId: parseInt(user.UserId, 10), productId: item.id },
-              });
-              console.log('Response from /api/cart/remove:', response.data);
-  
-              if (response.data.cart) {
-                setCheckoutItems(response.data.cart);
-                fetchCartFromDB();
-              }
-  
-              removeFromCart(item.id);
-            } catch (err) {
-              console.error('Error removing item from cart on server:', err.response?.data || err.message);
-              if (err.response?.status === 404) {
-                console.log('Item not found in cart on server, removing from client anyway');
-                removeFromCart(item.id);
-                if (err.response?.data?.cart) {
-                  setCheckoutItems(err.response.data.cart);
-                  fetchCartFromDB();
-                }
-              } else {
-                console.error('Failed to remove item from cart on server:', err.response?.data?.message || err.message);
-              }
+            // Bỏ qua lỗi và tiếp tục xóa trên client
+            removeFromCart(item.id, false); // Không hiển thị toast
+            if (err.response?.data?.cart) {
+              setCheckoutItems(err.response.data.cart);
             }
           }
         }
   
-        toast.success(`Đơn hàng ${orderId} đã được thanh toán thành công!`, { autoClose: 2000 });
+        // Chỉ gọi fetchCartFromDB một lần sau khi xóa tất cả sản phẩm
+        if (!hasFetchedCart) {
+          fetchCartFromDB();
+          setHasFetchedCart(true);
+        }
+  
         setStep(4);
         setPendingOrder(null);
         return true;
       } else if (response.data.success && (response.data.status === 0 || response.data.status === 3)) {
         console.log('Payment is still processing, status:', response.data.status);
         setPaymentStatus('pending');
-        toast.info('Đang chờ thanh toán, vui lòng quét mã QR hoặc mở ứng dụng ZaloPay để hoàn tất.', { autoClose: 2000 });
+        toast.warning('Đang chờ thanh toán, vui lòng quét mã QR hoặc mở ứng dụng ZaloPay để hoàn tất.', {
+          autoClose: 5000,
+          position: toast.POSITION.TOP_CENTER,
+          className: 'bg-yellow-100 text-yellow-800 border border-yellow-300',
+        });
         return false;
       } else if (response.data.success && response.data.status === -1) {
         console.log('Payment failed, status:', response.data.status);
@@ -250,30 +198,39 @@ const CheckoutPage = () => {
     }
   };
 
+
+  useEffect(() => {
+    console.log('Toast success useEffect - paymentStatus:', paymentStatus, 'hasShownSuccessToast:', hasShownSuccessToast);
+    if (paymentStatus === 'success' && !hasShownSuccessToast) {
+      console.log('Showing toast.success for orderId:', orderId);
+      toast.success(`Đơn hàng ${orderId} đã được thanh toán thành công!`, { autoClose: 2000 });
+      setHasShownSuccessToast(true);
+    }
+  }, [paymentStatus, orderId, hasShownSuccessToast]);
+
   useEffect(() => {
     console.log('Initial useEffect - Current paymentStatus:', paymentStatus);
     const query = new URLSearchParams(window.location.search);
     const orderIdFromQuery = query.get('orderId');
     const transactionIdFromQuery = query.get('transactionId');
-  
+
     const checkInitialStatus = async () => {
       if (orderIdFromQuery && transactionIdFromQuery) {
         console.log('Initial check - OrderId:', orderIdFromQuery, 'TransactionId:', transactionIdFromQuery);
         setOrderId(orderIdFromQuery);
         setTransactionId(transactionIdFromQuery);
         setStep(3.5);
-  
+
         try {
           const dbResponse = await axios.get(
             `http://localhost:5000/api/payments/status?transactionId=${transactionIdFromQuery}`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
           console.log('Initial check response from /api/payments/status:', dbResponse.data);
-  
+
           if (dbResponse.data.success && dbResponse.data.status === 'Đã thanh toán') {
             setPaymentStatus('success');
             setIsPaymentProcessed(true);
-            toast.success(`Đơn hàng ${orderIdFromQuery} đã được thanh toán thành công!`, { autoClose: 2000 });
             setStep(4);
             setPendingOrder(null);
           } else {
@@ -292,7 +249,7 @@ const CheckoutPage = () => {
         setIsPaymentProcessed(false);
       }
     };
-  
+
     checkInitialStatus();
   }, []);
 
@@ -318,33 +275,34 @@ const CheckoutPage = () => {
   }, []);
 
   useEffect(() => {
-    const loadCheckoutItems = async () => {
-      let items = [];
-      if (state?.fromBuyNow && state.cartItems) {
-        items = state.cartItems.map((item) => ({
-          id: item.id,
-          name: item.Name || item.name,
-          price: item.discountedPrice || item.price,
-          image: item.image,
-          quantity: item.quantity,
-        }));
-      } else {
-        if (cart.length === 0 && token) {
-          await fetchCartFromDB();
-        }
-        items = cart.map((item) => ({
-          id: item.id,
-          name: item.name || item.Name,
-          price: item.discountedPrice || item.price || 0,
-          image: item.image,
-          quantity: item.quantity,
-        }));
+  const loadCheckoutItems = async () => {
+    let items = [];
+    if (state?.fromBuyNow && state.cartItems) {
+      items = state.cartItems.map((item) => ({
+        id: item.id,
+        name: item.Name || item.name,
+        price: item.discountedPrice || item.price,
+        image: item.image,
+        quantity: item.quantity,
+      }));
+    } else {
+      if (cart.length === 0 && token && !hasFetchedCart) { // Chỉ gọi fetchCartFromDB nếu cần
+        await fetchCartFromDB();
+        setHasFetchedCart(true);
       }
-      setCheckoutItems(items);
-    };
+      items = cart.map((item) => ({
+        id: item.id,
+        name: item.name || item.Name,
+        price: item.discountedPrice || item.price || 0,
+        image: item.image,
+        quantity: item.quantity,
+      }));
+    }
+    setCheckoutItems(items);
+  };
 
-    loadCheckoutItems();
-  }, [state, cart, token, fetchCartFromDB]);
+  loadCheckoutItems();
+}, [state, token, fetchCartFromDB]); // Loại bỏ cart khỏi phụ thuộc
 
   const shippingFee = shippingMethod === 'fast' ? 30000 : 15000;
   const totalAmount = checkoutItems.reduce((sum, item) => {
@@ -449,7 +407,6 @@ const CheckoutPage = () => {
               console.log('Final check: Payment status is "Đã thanh toán"');
               setPaymentStatus('success');
               setIsPaymentProcessed(true);
-              toast.success(`Đơn hàng ${orderId} đã được thanh toán thành công!`, { autoClose: 2000 });
               setStep(4);
               setPendingOrder(null);
             } else {
@@ -476,7 +433,7 @@ const CheckoutPage = () => {
       if (interval) clearInterval(interval);
       if (timeout) clearTimeout(timeout);
     };
-  }, [transactionId, paymentMethod, isPaymentProcessed, paymentStatus]);
+  }, [transactionId, paymentMethod, isPaymentProcessed, paymentStatus, token, user, state, checkoutItems, removeFromCart, fetchCartFromDB, setStep, setPendingOrder]);
 
   const handleOrderSubmit = async () => {
     if (!token || !user?.UserId) {
@@ -604,7 +561,11 @@ const CheckoutPage = () => {
       window.location.href = zalopayUrl;
 
       setTimeout(() => {
-        toast.info('Nếu ứng dụng ZaloPay không mở, vui lòng quét mã QR hoặc cài đặt ZaloPay.', { autoClose: 5000 });
+        toast.warning('Nếu ứng dụng ZaloPay không mở, vui lòng quét mã QR hoặc cài đặt ZaloPay.', {
+          autoClose: 5000, // Tăng thời gian hiển thị lên 5 giây
+          position: toast.POSITION.TOP_CENTER, // Đặt vị trí ở giữa trên cùng
+          className: 'bg-yellow-100 text-yellow-800 border border-yellow-300', // Tùy chỉnh kiểu dáng
+        });
       }, 2000);
     } else {
       toast.error('Không thể mở ZaloPay. Vui lòng thử lại.', { autoClose: 2000 });
